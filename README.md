@@ -286,5 +286,5 @@ This project is licensed under the MIT License — see [LICENSE](LICENSE) for de
 
 ## Author
 
-Master's Thesis — Department of Meteorology / Climate Science  
-Analysis period: 1950–2022 | Domain: Germany | Season: JJA
+Hamza Jbili — M.Sc Environmental and Resource Management - BTU Cottbus Senftenberg - Germany
+Climate change science - Environmental engineering and data analysis
