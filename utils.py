@@ -1,7 +1,7 @@
 """
 utils.py
 --------
-Shared utilities for all three analysis scripts.
+Shared utilities for all the analysis scripts.
 All functions are imported into the main scripts; nothing runs on import.
 """
 
