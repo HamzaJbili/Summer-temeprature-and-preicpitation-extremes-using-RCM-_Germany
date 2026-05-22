@@ -46,11 +46,8 @@ from utils import (
     START_YEAR, END_YEAR, REF_START, REF_END, DPI,
 )
 
-plt.rcParams.update({
-    "font.size": 8, "axes.labelsize": 8,
-    "xtick.labelsize": 6, "ytick.labelsize": 6,
-    "savefig.facecolor": "white", "figure.facecolor": "white",
-})
+from utils import set_ipcc_style
+set_ipcc_style()
 
 # ── output directories ────────────────────────────────────────────────────────
 FIGDIR = os.path.join("output_drivers", "figures")
@@ -66,12 +63,24 @@ INDEX_NC_DIR = "output_extremes/netcdf"   # produced by script2
 # "ICON" uses ICON-CLM driver files; "EOBS" uses ERA5 driver files.
 # Both are listed; you can run one or both by setting DATASETS below.
 INDICES = [
-    ("T95_exceedance_days", "T95_days"),
-    ("Heatwave_number",     "HWN"),
-    ("R95p_exceedance_days","R95p_days"),
-    ("R99p_exceedance_days","R99p_days"),
-    ("Dry_days",            "Dry_days"),
-    ("CDD",                 "CDD"),
+    # Temperature
+    ("T95_exceedance_days",  "T95_days"),
+    ("Heatwave_number",      "HWN"),
+    # Precipitation — frequency
+    ("R95p_exceedance_days", "R95p_days"),
+    ("R99p_exceedance_days", "R99p_days"),
+    ("R10mm",                "R10mm"),
+    ("R20mm",                "R20mm"),
+    # Precipitation — intensity
+    ("Rx1day",               "Rx1day"),
+    ("Rx5day",               "Rx5day"),
+    ("SDII",                 "SDII"),
+    # Precipitation — concentration
+    ("R95pTOT",              "R95pTOT"),
+    # Precipitation — duration
+    ("Dry_days",             "Dry_days"),
+    ("CDD",                  "CDD"),
+    ("CWD",                  "CWD"),
 ]
 
 # ── driver file configuration ─────────────────────────────────────────────────
