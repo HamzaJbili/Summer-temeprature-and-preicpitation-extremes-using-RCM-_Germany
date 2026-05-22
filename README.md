@@ -26,7 +26,7 @@ The study evaluates the performance of **ICON-CLM** (~12 km) against the **E-OBS
 | Threshold reference | 1961–1990 (WMO recommendation for extreme trend studies) |
 | Anomaly reference | 1991–2020 (current WMO climatological normal) |
 | Trend method | Theil-Sen slope + Mann-Kendall (Yue-Wang autocorrelation correction) |
-| Figure style | IPCC AR6 Working Group I (BrBG / RdBu_r diverging colormaps, 600 dpi) |
+| Figure style | IPCC AR6 WGI (BrBG / RdBu_r diverging, 5-yr & 11-yr rolling means, 600 dpi) |
 
 ---
 
@@ -35,7 +35,7 @@ The study evaluates the performance of **ICON-CLM** (~12 km) against the **E-OBS
 ```
 .
 ├── utils.py                  # Shared utilities (imported by all scripts)
-├── script1_mean_climate.py   # JJA mean temperature and precipitation trends
+├── script1_mean_climate.py   # JJA mean temperature and precipitation: climatology, bias, trends
 ├── script2_extremes.py       # 13 annual extreme indices + trend maps + summary figures
 ├── script3_drivers.py        # Process-driver composite and correlation analysis
 │
@@ -186,7 +186,7 @@ Update the `GERMANY_SHP` constant at the top of each script to match your system
 
 All scripts are run from the directory containing the input data files.
 
-### Script 1 — Mean climate trends
+### Script 1 — Mean climate: climatology, bias, and trends
 
 ```bash
 python script1_mean_climate.py
@@ -195,9 +195,11 @@ python script1_mean_climate.py
 **Outputs** → `output_mean_climate/`
 ```
 figures/
-  JJA_mean_temperature_trend_map.png
+  JJA_mean_temperature_climatology_map.png     ← 3-panel: E-OBS | ICON | bias (1991-2020)
+  JJA_mean_temperature_trend_map.png           ← paired trend map with stippling
+  JJA_mean_temperature_germany_series.png      ← time series with rolling means + trend annotation
+  JJA_total_precipitation_climatology_map.png
   JJA_total_precipitation_trend_map.png
-  JJA_mean_temperature_germany_series.png
   JJA_total_precipitation_germany_series.png
 tables/
   mean_climate_summary.csv
@@ -244,6 +246,12 @@ tables/
 ---
 
 ## Output Description
+
+### Climatology maps (`{variable}_climatology_map.png`)
+
+Three-panel figure (script 1 only): (a) E-OBS 1991-2020 mean, (b) ICON-CLM 1991-2020 mean,
+(c) model bias (ICON minus E-OBS). Panels (a) and (b) use a sequential colormap calibrated
+to the observed range; panel (c) uses a symmetric diverging colormap centred on zero.
 
 ### Trend maps (`{index}_trend_map.png`)
 
