@@ -342,6 +342,106 @@ def interp_display(da2d, factor=DISPLAY_FACTOR):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  Climatology and bias map figures (used by script1)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def plot_climatology_maps(obs_clim, mod_clim, gdf, geom, outfile,
+                          levels, colors, cbar_label, tick_fmt="%.0f",
+                          suptitle=None):
+    """
+    Three-panel figure: (a) E-OBS climatology, (b) ICON-CLM climatology,
+    (c) model bias (ICON minus E-OBS).
+
+    Designed for showing the mean-state spatial pattern alongside the
+    systematic model bias.  Panels (a) and (b) share one sequential colormap;
+    panel (c) uses a diverging colormap centred on zero.
+
+    Parameters
+    ----------
+    obs_clim, mod_clim : xr.DataArray (lat, lon)
+        1991-2020 climatological mean for E-OBS and ICON-CLM.
+    gdf  : GeoDataFrame
+    geom : Shapely geometry
+    outfile : str
+    levels  : list — sequential boundary levels for panels (a) and (b)
+    colors  : list — one colour per interval (len = len(levels)-1)
+    cbar_label : str — colorbar label including units
+    tick_fmt   : str — colorbar tick format
+    suptitle   : str, optional
+    """
+    bias   = mod_clim - obs_clim
+    n_lvl  = len(levels)
+    maxabs = float(np.nanmax(np.abs(bias.values)))
+    if maxabs < 1e-6:
+        maxabs = 1.0
+    # Symmetric diverging levels for the bias panel
+    step     = maxabs / 5
+    bias_lvl = [round(-maxabs + k * step, 3) for k in range(11)]
+    bias_col = [
+        "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#f7f7f7",
+        "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f",
+    ]
+
+    cmap_seq  = mcolors.ListedColormap(colors)
+    norm_seq  = mcolors.BoundaryNorm(levels, cmap_seq.N)
+    cmap_div  = mcolors.ListedColormap(bias_col)
+    norm_div  = mcolors.BoundaryNorm(bias_lvl, cmap_div.N)
+
+    fig, axes = plt.subplots(1, 3, figsize=(13.0, 4.4))
+    fig.patch.set_facecolor("white")
+    if suptitle:
+        fig.suptitle(suptitle, fontsize=10, fontweight="bold", y=0.99)
+
+    panel_labels = ["(a)", "(b)", "(c)"]
+    panel_titles = ["E-OBS", "ICON-CLM", "Bias (ICON − E-OBS)"]
+
+    for k, (ax, da, cmap, norm, lvls, title, plabel) in enumerate(zip(
+            axes,
+            [obs_clim, mod_clim, bias],
+            [cmap_seq, cmap_seq, cmap_div],
+            [norm_seq, norm_seq, norm_div],
+            [levels,   levels,   bias_lvl],
+            panel_titles, panel_labels,
+    )):
+        fine = interp_display(da)
+        mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
+        arr  = apply_mask(fine.values, mask)
+
+        cf = ax.contourf(
+            fine["lon"].values, fine["lat"].values, arr,
+            levels=lvls, cmap=cmap, norm=norm,
+            extend="both", antialiased=True,
+        )
+        clip_contourf(cf, ax, geom)
+        gdf.boundary.plot(ax=ax, color="black", linewidth=0.55, zorder=5)
+        ax.text(0.03, 0.97, plabel, transform=ax.transAxes,
+                ha="left", va="top", fontsize=9, fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
+        ax.set_title(title, fontsize=9.5, fontweight="bold", pad=4)
+        style_axis(ax)
+
+        # Individual colorbar below each panel
+        plt.subplots_adjust(left=0.04, right=0.98, top=0.88,
+                            bottom=0.22, wspace=0.18)
+        pos  = ax.get_position()
+        cax  = fig.add_axes([pos.x0 + 0.01, 0.10, pos.width - 0.02, 0.040])
+        fmt  = tick_fmt if k < 2 else "%.2f"
+        ticks = [lvls[0], lvls[len(lvls)//2], lvls[-1]] if k == 2 else lvls
+        cb   = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
+                            ticks=ticks, orientation="horizontal", extend="both")
+        cb.ax.tick_params(labelsize=6.5, pad=1.5)
+        cb.ax.xaxis.set_major_formatter(FormatStrFormatter(fmt))
+        if k == 1:
+            cb.set_label(cbar_label, fontsize=8, labelpad=3)
+        elif k == 2:
+            cb.set_label(f"Bias [{cbar_label.split('[')[-1].rstrip(']') if '[' in cbar_label else cbar_label}]",
+                         fontsize=8, labelpad=3)
+
+    fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  NEW: Annual precipitation extreme index functions
 #  All functions operate on a daily JJA DataArray (time, lat, lon).
 #  Output: (year, lat, lon) DataArray with integer year coordinate.
