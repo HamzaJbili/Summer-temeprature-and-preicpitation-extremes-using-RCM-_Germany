@@ -10,7 +10,7 @@
 
 This repository contains the complete Python analysis workflow for a master's thesis assessing **summer (JJA) temperature and precipitation trends and extremes over Germany** using high-resolution regional climate modelling.
 
-The study evaluates the performance of **ICON-CLM** (~12 km) against the **E-OBS** gridded observational dataset (v28e, 0.25°) over the period **1950–2022**. It computes **13 annual extreme indices** across temperature and precipitation, applies non-parametric trend statistics (Theil-Sen + Mann-Kendall with Yue-Wang autocorrelation correction), and links extreme-summer patterns to atmospheric and land-surface process drivers. All figures are produced in **IPCC AR6 publication style**.
+The study evaluates the performance of **ICON-CLM** (~12 km) against the **E-OBS** gridded observational dataset (v28e, 0.25°) over the period **1950–2022**. It computes **9 annual extreme indices** selected for their scientific relevance to Germany's summer hazards (heat waves, heavy precipitation, drought), applies non-parametric trend statistics (Theil-Sen + Mann-Kendall with Yue-Wang autocorrelation correction), and links extreme-summer patterns to atmospheric and land-surface process drivers. All figures are produced in **IPCC AR6 publication style**.
 
 ---
 
@@ -36,7 +36,7 @@ The study evaluates the performance of **ICON-CLM** (~12 km) against the **E-OBS
 .
 ├── utils.py                  # Shared utilities (imported by all scripts)
 ├── script1_mean_climate.py   # JJA mean temperature and precipitation: climatology, bias, trends
-├── script2_extremes.py       # 13 annual extreme indices + trend maps + summary figures
+├── script2_extremes.py       # 9 annual extreme indices + trend maps + summary figures
 ├── script3_drivers.py        # Process-driver composite and correlation analysis
 │
 ├── requirements.txt          # Python dependencies
@@ -56,45 +56,46 @@ clear error if script 2 has not been run first.
 
 ---
 
-## Extreme Indices Computed (13 total)
+## Extreme Indices Computed (9 total)
 
-### Temperature (2)
+The index set is deliberately compact, retaining only indices with a clear physical
+interpretation, high signal-to-noise ratio in Germany's summer climate, and direct
+relevance to documented hazards.  Only daily mean temperature (Tmean) is used —
+indices requiring Tmax or Tmin (TXx, TX90p, TNx, TN90p) are not applicable to
+this dataset.
 
-| Index | Definition | Threshold | Hazard relevance |
+### Temperature (3)
+
+| Index | Definition | Threshold / method | Hazard relevance |
 |---|---|---|---|
-| **T95** | JJA days with Tmean > local 95th pct | 95th pct JJA Tmean, 1961–1990 | Warm-day frequency |
-| **HWN** | Number of heatwave events (≥ 3 consecutive T95 days) | T95 | Persistent heat |
+| **T95** | JJA days with Tmean > local 95th pct | 95th pct JJA Tmean, 1961–1990 | Hot-day frequency |
+| **HWN** | Number of heatwave events (≥ 3 consecutive T95 days) | T95 | Persistent heat — frequency |
+| **HWD** | Mean heatwave event duration (days event⁻¹) | T95; computed from same runs as HWN | Persistent heat — severity |
 
-### Precipitation — Frequency (4)
+Together, HWN × HWD describes total heatwave exposure per season (comparable to
+a hazard dose); disentangling frequency from duration is essential for heat-mortality
+and energy-demand impact assessments.
 
-| Index | Definition | Threshold | Hazard relevance |
+### Precipitation — Heavy events (4)
+
+| Index | Definition | Threshold / method | Hazard relevance |
 |---|---|---|---|
 | **R95p** | JJA wet days with P > local 95th pct wet-day distribution | 95th pct, 1961–1990 wet days | Heavy precipitation frequency |
-| **R99p** | JJA wet days with P > local 99th pct wet-day distribution | 99th pct, 1961–1990 wet days | Extreme precipitation frequency |
-| **R10mm** | JJA days with P ≥ 10 mm day⁻¹ | Fixed: 10 mm day⁻¹ | Surface runoff onset |
-| **R20mm** | JJA days with P ≥ 20 mm day⁻¹ | Fixed: 20 mm day⁻¹ | Urban flash-flood triggering |
-
-### Precipitation — Intensity (3)
-
-| Index | Definition | Threshold | Hazard relevance |
-|---|---|---|---|
-| **Rx1day** | Annual maximum 1-day precipitation (mm day⁻¹) | — | Peak convective intensity |
-| **Rx5day** | Annual maximum consecutive 5-day precipitation (mm) | — | Basin-scale flooding |
-| **SDII** | Mean precipitation on wet days (mm wet-day⁻¹) | Wet day: P ≥ 1 mm day⁻¹ | Per-event intensity change |
+| **Rx1day** | Annual maximum 1-day precipitation (mm day⁻¹) | — | Peak convective / flash-flood intensity |
+| **Rx5day** | Annual maximum consecutive 5-day precipitation (mm) | Sliding 5-day window | Basin-scale river flooding |
+| **SDII** | Mean precipitation on wet days (mm wet-day⁻¹) | Wet day: P ≥ 1 mm day⁻¹ | Per-event intensity change independent of frequency |
 
 ### Precipitation — Concentration (1)
 
-| Index | Definition | Threshold | Hazard relevance |
+| Index | Definition | Threshold / method | Hazard relevance |
 |---|---|---|---|
-| **R95pTOT** | Fraction (%) of total wet-day precip from very heavy events | R95p threshold | Precipitation concentration |
+| **R95pTOT** | Fraction (%) of seasonal wet-day precip from very heavy events | R95p threshold | Precipitation concentration / intensification signal |
 
-### Precipitation — Duration (3)
+### Precipitation — Drought (1)
 
-| Index | Definition | Threshold | Hazard relevance |
+| Index | Definition | Threshold / method | Hazard relevance |
 |---|---|---|---|
-| **Dry days** | JJA days with P < 1 mm day⁻¹ | Fixed: 1 mm day⁻¹ | Summer dryness frequency |
-| **CDD** | Maximum consecutive dry days in JJA | Fixed: 1 mm day⁻¹ | Drought spell persistence |
-| **CWD** | Maximum consecutive wet days in JJA | Wet day: P ≥ 1 mm day⁻¹ | Sustained rainfall duration |
+| **CDD** | Maximum consecutive dry days in JJA | P < 1 mm day⁻¹ | Drought spell persistence; soil-moisture depletion |
 
 ---
 
@@ -119,8 +120,8 @@ For each index, script 3 identifies upper-quartile (top 25%) summers by Germany-
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/HamzaJbili/Summer-temeprature-and-preicpitation-extremes-using-RCM-_Germany.git
-cd Summer-temeprature-and-preicpitation-extremes-using-RCM-_Germany
+git clone https://github.com/hamzajbili/summer-temeprature-and-preicpitation-extremes-using-rcm-_germany.git
+cd summer-temeprature-and-preicpitation-extremes-using-rcm-_germany
 ```
 
 ### 2. Create a virtual environment (recommended)
@@ -214,9 +215,9 @@ python script2_extremes.py
 **Outputs** → `output_extremes/`
 ```
 figures/
-  {index}_trend_map.png          ← paired E-OBS / ICON-CLM trend map (13 indices)
-  {index}_germany_series.png     ← Germany-average time series with rolling means (13 indices)
-  precipitation_overview.png     ← flagship multi-panel figure: all precip indices
+  {index}_trend_map.png          ← paired E-OBS / ICON-CLM trend map (9 indices)
+  {index}_germany_series.png     ← Germany-average time series with rolling means (9 indices)
+  precipitation_overview.png     ← flagship multi-panel figure: all 6 precip indices
   taylor_diagram.png             ← ICON-CLM model skill (correlation / normalised std dev)
   trend_heatmap.png              ← all-index trend summary with significance markers
 tables/
@@ -270,12 +271,13 @@ Two-panel figure:
 
 ### Precipitation overview (`precipitation_overview.png`)
 
-Flagship multi-panel N×2 figure covering all 11 precipitation indices.
-Designed as the thesis centrepiece figure for precipitation extremes.
+Flagship multi-panel N×2 figure (E-OBS left, ICON-CLM right) covering all
+6 precipitation indices in one publication-ready figure.  Vertical colorbars
+per row; stippling for p < 0.05.
 
 ### Taylor diagram (`taylor_diagram.png`)
 
-Polar diagram comparing ICON-CLM to E-OBS for all 13 indices simultaneously.
+Polar diagram comparing ICON-CLM to E-OBS for all 9 indices simultaneously.
 Each point's angular position encodes the Pearson correlation; radial position
 encodes the normalised standard deviation (σ_model / σ_obs). RMSE contours
 are drawn from the reference point (E-OBS = ★ at r=1, θ=0).
@@ -329,8 +331,8 @@ pre-whitening (TFPW) to correct for positive lag-1 autocorrelation that would
 otherwise inflate the significance of the trend statistic (Yue & Wang, 2004).
 Falls back to the original MK test if the correction fails for a given cell.
 
-**Wet-day restriction:** R95p, R99p, SDII, R95pTOT, and CWD use a wet-day
-threshold of P ≥ 1 mm day⁻¹, consistent with ETCCDI definitions (Zhang et al., 2011).
+**Wet-day restriction:** R95p, SDII, and R95pTOT use a wet-day threshold of
+P ≥ 1 mm day⁻¹, consistent with ETCCDI definitions (Zhang et al., 2011).
 
 **Rx5day computation:** The 5-day rolling sum is computed using a sliding window
 approach (equivalent to `pandas.rolling(5).sum()`), with the maximum over all
@@ -365,10 +367,12 @@ See `requirements.txt` for pinned versions. Core libraries:
 - Collaud Coen, M., et al. (2020). Identifying European air quality stations for detection of long-term changes. *Atmospheric Measurement Techniques*, 13, 6945–6964. https://doi.org/10.5194/amt-13-6945-2020
 - Cornes, R. C., et al. (2018). An Ensemble Version of the E-OBS Temperature and Precipitation Data Sets. *Journal of Geophysical Research: Atmospheres*, 123, 9391–9409. https://doi.org/10.1029/2017JD028200
 - Donat, M. G., et al. (2013). Updated analyses of temperature and precipitation extreme indices since the beginning of the twentieth century. *Journal of Geophysical Research: Atmospheres*, 118, 2098–2118. https://doi.org/10.1002/jgrd.50150
+- Fischer, E. M., & Knutti, R. (2015). Anthropogenic contribution to global occurrence of heavy-precipitation and high-temperature extremes. *Nature Climate Change*, 5, 560–564. https://doi.org/10.1038/nclimate2617
 - Fischer, E. M., et al. (2014). Robust spatially aggregated projections of climate extremes. *Nature Climate Change*, 4, 713–717. https://doi.org/10.1038/nclimate2317
 - Frich, P., et al. (2002). Observed coherent changes in climatic extremes during the second half of the twentieth century. *Climate Research*, 19, 193–212. https://doi.org/10.3354/cr019193
 - Hersbach, H., et al. (2020). The ERA5 global reanalysis. *Quarterly Journal of the Royal Meteorological Society*, 146, 1999–2049. https://doi.org/10.1002/qj.3803
 - Moberg, A., & Jones, P. D. (2005). Trends in indices for extremes in daily temperature and precipitation in central and western Europe. *International Journal of Climatology*, 25, 1149–1171. https://doi.org/10.1002/joc.1163
+- Perkins, S. E., & Alexander, L. V. (2013). On the measurement of heat waves. *Journal of Climate*, 26, 4500–4517. https://doi.org/10.1175/JCLI-D-12-00383.1
 - Schulzweida, U. (2023). CDO User Guide v2.2.2. Zenodo. https://doi.org/10.5281/zenodo.10020826
 - Sen, P. K. (1968). Estimates of the regression coefficient based on Kendall's tau. *Journal of the American Statistical Association*, 63, 1379–1389.
 - WMO (2017). *Guidelines on the Calculation of Climate Normals*. WMO-No. 1203.
