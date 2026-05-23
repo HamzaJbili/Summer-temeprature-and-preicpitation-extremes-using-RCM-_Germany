@@ -63,24 +63,19 @@ INDEX_NC_DIR = "output_extremes/netcdf"   # produced by script2
 # "ICON" uses ICON-CLM driver files; "EOBS" uses ERA5 driver files.
 # Both are listed; you can run one or both by setting DATASETS below.
 INDICES = [
-    # Temperature
+    # Temperature extremes
     ("T95_exceedance_days",  "T95_days"),
     ("Heatwave_number",      "HWN"),
-    # Precipitation — frequency
+    ("Heatwave_duration",    "HWD"),
+    # Precipitation — heavy events
     ("R95p_exceedance_days", "R95p_days"),
-    ("R99p_exceedance_days", "R99p_days"),
-    ("R10mm",                "R10mm"),
-    ("R20mm",                "R20mm"),
-    # Precipitation — intensity
     ("Rx1day",               "Rx1day"),
     ("Rx5day",               "Rx5day"),
     ("SDII",                 "SDII"),
     # Precipitation — concentration
     ("R95pTOT",              "R95pTOT"),
-    # Precipitation — duration
-    ("Dry_days",             "Dry_days"),
+    # Precipitation — drought
     ("CDD",                  "CDD"),
-    ("CWD",                  "CWD"),
 ]
 
 # ── driver file configuration ─────────────────────────────────────────────────
