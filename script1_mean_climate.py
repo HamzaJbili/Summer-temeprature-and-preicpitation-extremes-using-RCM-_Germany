@@ -1,9 +1,12 @@
 """
 script1_mean_climate.py
 -----------------------
-JJA mean temperature and total precipitation climatology,
+JJA mean temperature (°C) and mean precipitation (mm day⁻¹) climatology,
 anomalies, and trend maps for ICON-CLM vs E-OBS over Germany.
 
+Input data        : CDO-preprocessed annual JJA means (one value per year per grid cell)
+                    Temperature : annual JJA mean (°C)
+                    Precipitation : annual JJA mean (mm day⁻¹)
 Anomaly reference : 1991-2020  (WMO current normal)
 Trend method      : Theil-Sen slope + Mann-Kendall (Yue-Wang autocorr. correction)
 Output            : paired trend maps, Germany-average time series, summary CSV
@@ -15,7 +18,7 @@ import pandas as pd
 import xarray as xr
 
 from utils import (
-    load_field, keep_jja, annual_jja_mean, annual_jja_sum,
+    load_field,
     reference_mean, compute_anomalies, area_mean, rmse,
     compute_trend_maps, series_stats,
     load_country_shape, plot_paired_trend_maps, plot_germany_series,
@@ -43,7 +46,7 @@ TEMP_COLORS = [
     "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#8c0d1c", "#67001f",
 ]
 
-PREC_LEVELS = [-60, -45, -30, -15, -5, 0, 5, 15, 30, 45, 60]
+PREC_LEVELS = [-0.30, -0.20, -0.15, -0.10, -0.05, 0, 0.05, 0.10, 0.15, 0.20, 0.30]
 PREC_COLORS = [
     "#7f3b08", "#b35806", "#e08214", "#fdb863", "#fee0b6", "#f7f7f7",
     "#d8f0ed", "#a6dba0", "#5aae61", "#1b7837",
@@ -55,6 +58,25 @@ plt.rcParams.update({
     "xtick.labelsize": 6, "ytick.labelsize": 6,
     "savefig.facecolor": "white", "figure.facecolor": "white",
 })
+
+
+# ── CDO file converter ────────────────────────────────────────────────────────
+def _to_annual(da):
+    """
+    Convert a CDO annual-mean file to a year-indexed DataArray.
+
+    CDO writes annual means with a 'time' dimension whose coordinate values
+    are full datetime stamps (e.g. 1950-07-16).  Downstream functions
+    (reference_mean, compute_trend_maps, …) expect a 'year' integer dimension.
+    This function extracts the year from each time stamp and swaps the
+    dimension so the result is indexed by year (e.g. 1950, 1951, …, 2022).
+    """
+    years = da["time"].dt.year.values                     # e.g. array([1950, 1951, …, 2022])
+    return (
+        da.assign_coords(year=("time", years))            # add 'year' as a coordinate on 'time'
+          .swap_dims({"time": "year"})                    # make 'year' the active dimension
+          .drop_vars("time", errors="ignore")             # remove the old datetime coordinate
+    )
 
 
 # ── processing helper ─────────────────────────────────────────────────────────
@@ -147,19 +169,17 @@ if __name__ == "__main__":
     print("Loading Germany boundary...")
     gdf, geom = load_country_shape(GERMANY_SHP)
 
-    print("Loading temperature data...")
-    tas_model_jja = keep_jja(load_field(MODEL_T_FILE, "tas"))
-    tas_obs_jja   = keep_jja(load_field(OBS_T_FILE,   "tg"))
+    # Input files are CDO-preprocessed annual JJA means — no in-Python
+    # seasonal extraction or aggregation needed.  _to_annual() converts the
+    # CDO 'time' dimension to an integer 'year' dimension expected downstream.
 
-    print("Loading precipitation data...")
-    pr_model_jja = keep_jja(load_field(MODEL_P_FILE, "pr"))
-    pr_obs_jja   = keep_jja(load_field(OBS_P_FILE,   "rr"))
+    print("Loading temperature data (annual JJA means, °C)...")
+    tas_model_annual = _to_annual(load_field(MODEL_T_FILE, "tas"))
+    tas_obs_annual   = _to_annual(load_field(OBS_T_FILE,   "tg"))
 
-    print("Computing annual aggregates...")
-    tas_model_annual = annual_jja_mean(tas_model_jja)
-    tas_obs_annual   = annual_jja_mean(tas_obs_jja)
-    pr_model_annual  = annual_jja_sum(pr_model_jja)
-    pr_obs_annual    = annual_jja_sum(pr_obs_jja)
+    print("Loading precipitation data (annual JJA means, mm day⁻¹)...")
+    pr_model_annual  = _to_annual(load_field(MODEL_P_FILE, "pr"))
+    pr_obs_annual    = _to_annual(load_field(OBS_P_FILE,   "rr"))
 
     rows = []
 
@@ -176,16 +196,16 @@ if __name__ == "__main__":
         gdf=gdf, geom=geom, rows=rows,
     )
 
-    print("Processing JJA total precipitation...")
+    print("Processing JJA mean precipitation...")
     process_mean_index(
-        name="JJA_total_precipitation",
+        name="JJA_mean_precipitation",
         annual_model=pr_model_annual,
         annual_obs=pr_obs_annual,
-        unit="mm season-1",
-        trend_unit="mm / decade",
+        unit="mm day⁻¹",
+        trend_unit="mm day⁻¹ decade⁻¹",
         levels=PREC_LEVELS,
         colors=PREC_COLORS,
-        tick_fmt="%.0f",
+        tick_fmt="%.2f",
         gdf=gdf, geom=geom, rows=rows,
     )
 
