@@ -38,7 +38,8 @@ TABDIR = os.path.join("output_mean_climate", "tables")
 os.makedirs(FIGDIR, exist_ok=True)
 os.makedirs(TABDIR, exist_ok=True)
 
-# ── colormap settings ─────────────────────────────────────────────────────────
+
+# ── colormap settings ─────────────────────────────────────────────────────────  ## To be checked if we can automatise the settings
 TEMP_LEVELS = [-0.20, -0.15, -0.10, -0.05, 0.00,
                 0.05,  0.10,  0.15,  0.20, 0.25, 0.30, 0.35]
 TEMP_COLORS = [
