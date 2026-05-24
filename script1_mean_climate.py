@@ -47,11 +47,7 @@ TEMP_COLORS = [
     "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#8c0d1c", "#67001f",
 ]
 
-# JJA = Jun(30) + Jul(31) + Aug(31) = 92 days every year
-JJA_DAYS = 92
-
-# Trend levels for precipitation are in mm/decade (seasonal total change per decade)
-PREC_LEVELS = [-20, -15, -10, -5, -2, 0, 2, 5, 10, 15, 20]
+PREC_LEVELS = [-0.30, -0.20, -0.15, -0.10, -0.05, 0, 0.05, 0.10, 0.15, 0.20, 0.30]
 PREC_COLORS = [
     "#7f3b08", "#b35806", "#e08214", "#fdb863", "#fee0b6", "#f7f7f7",
     "#d8f0ed", "#a6dba0", "#5aae61", "#1b7837",
@@ -87,26 +83,20 @@ def _to_annual(da):
 # ── processing helper ─────────────────────────────────────────────────────────
 def process_mean_index(name, annual_model, annual_obs, unit,
                        trend_unit, levels, colors, tick_fmt,
-                       gdf, geom, rows, trend_scale=1):
+                       gdf, geom, rows):
     """
     Full pipeline for one mean-climate variable:
     anomalies, trend maps, Germany-average plots, summary stats.
-
-    trend_scale : multiply annual data by this factor before computing trends.
-                  Use 1 for temperature (°C stays °C).
-                  Use JJA_DAYS (92) for precipitation: converts mm/day → mm/season
-                  so the Theil-Sen slope is in mm/decade, matching the literature.
-                  Anomalies and time-series plots always use the original mm/day data.
     """
-    # Anomalies relative to 1991-2020 — always in the original data unit (mm/day)
+    # Anomalies relative to 1991-2020
     clim_obs   = reference_mean(annual_obs,   ANOM_START, ANOM_END)
     clim_model = reference_mean(annual_model, ANOM_START, ANOM_END)
     anom_obs   = compute_anomalies(annual_obs,   clim_obs)
     anom_model = compute_anomalies(annual_model, clim_model)
 
-    # Trend maps — scale to seasonal total first if requested (precipitation case)
-    trend_obs   = compute_trend_maps(annual_obs   * trend_scale)
-    trend_model = compute_trend_maps(annual_model * trend_scale)
+    # Trend maps
+    trend_obs   = compute_trend_maps(annual_obs)
+    trend_model = compute_trend_maps(annual_model)
 
     # Paired trend maps figure
     plot_paired_trend_maps(
@@ -213,12 +203,11 @@ if __name__ == "__main__":
         annual_model=pr_model_annual,
         annual_obs=pr_obs_annual,
         unit="mm day⁻¹",
-        trend_unit="mm decade⁻¹",
+        trend_unit="mm day⁻¹ decade⁻¹",
         levels=PREC_LEVELS,
         colors=PREC_COLORS,
-        tick_fmt="%.0f",
+        tick_fmt="%.2f",
         gdf=gdf, geom=geom, rows=rows,
-        trend_scale=JJA_DAYS,
     )
 
     pd.DataFrame(rows).to_csv(
