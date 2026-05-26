@@ -693,7 +693,11 @@ def plot_paired_trend_maps(
         # Derive clean round levels with MaxNLocator — these become BOTH the
         # BoundaryNorm boundaries AND the colorbar ticks so they are always
         # perfectly aligned (tick marks sit exactly at colour edges).
-        loc   = MaxNLocator(nbins=8, steps=[1, 2, 2.5, 5, 10],
+        # Diverging maps get more bins (finer steps near zero give better
+        # discrimination where both datasets cluster close to 0).
+        # Non-diverging maps use fewer bins for a cleaner sequential ramp.
+        nbins = 10 if is_diverging else 8
+        loc   = MaxNLocator(nbins=nbins, steps=[1, 2, 2.5, 5, 10],
                             symmetric=is_diverging)
         nice  = loc.tick_values(lo, hi)
         margin = (hi - lo) * 0.08
