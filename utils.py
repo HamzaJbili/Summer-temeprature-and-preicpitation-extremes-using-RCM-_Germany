@@ -739,12 +739,11 @@ def plot_paired_trend_maps(
         gdf.boundary.plot(ax=ax, color="#1a1a1a", linewidth=0.70, zorder=6)
 
         # Stippling on coarse grid where p < ALPHA
-        # Skip when sig. area > 95% — dense dots add noise not information;
-        # the annotation box already communicates the result.
-        lo2d, la2d = np.meshgrid(slope["lon"].values, slope["lat"].values)
-        sig_mask   = pval.values < ALPHA
-        n_total    = int(np.isfinite(pval.values).sum())
-        sig_frac   = sig_mask.sum() / n_total * 100 if n_total > 0 else 0.0
+        lo2d, la2d  = np.meshgrid(slope["lon"].values, slope["lat"].values)
+        de_mask     = build_mask(slope["lon"].values, slope["lat"].values, geom)
+        sig_mask    = pval.values < ALPHA
+        n_de        = int(de_mask.sum())
+        sig_frac    = (sig_mask & de_mask).sum() / n_de * 100 if n_de > 0 else 0.0
         ax.scatter(lo2d[sig_mask], la2d[sig_mask],
                    s=2.0, c="#1a1a1a", alpha=0.40, marker=".", zorder=7, rasterized=True)
 

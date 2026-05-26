@@ -21,7 +21,7 @@ from utils import (
     load_field,
     reference_mean, compute_anomalies, area_mean, rmse,
     compute_trend_maps, series_stats,
-    load_country_shape, plot_paired_trend_maps, plot_germany_series,
+    load_country_shape, build_mask, plot_paired_trend_maps, plot_germany_series,
     set_ipcc_style,
     START_YEAR, END_YEAR, ANOM_START, ANOM_END, DPI,
 )
@@ -140,6 +140,10 @@ def process_mean_index(name, annual_model, annual_obs, unit,
     model_stats = series_stats(model_series)
     mean_bias   = float(np.nanmean(model_series.values - obs_series.values))
 
+    # Germany mask — used to count only German grid cells for the sig fraction
+    de_mask_obs = build_mask(trend_obs["lon"].values,   trend_obs["lat"].values,   geom)
+    de_mask_mod = build_mask(trend_model["lon"].values, trend_model["lat"].values, geom)
+
     rows.append({
         "index":    name,
         "unit":     unit,
@@ -158,14 +162,11 @@ def process_mean_index(name, annual_model, annual_obs, unit,
             float(np.nanmean(trend_model["sen_slope"].values
                              - trend_obs["sen_slope"].values)), 3),
 
-        # Fraction of significant grid cells — denominator is valid (Germany) cells only,
-        # matching the map annotation which uses np.isfinite(pval).sum() as denominator.
+        # Fraction of significant grid cells — Germany cells only
         "EOBS_sig_grid_fraction": round(
-            float((trend_obs["mk_pvalue"].values < 0.05).sum() /
-                  np.isfinite(trend_obs["mk_pvalue"].values).sum()), 3),
+            float((trend_obs["mk_pvalue"].values[de_mask_obs]   < 0.05).mean()), 3),
         "ICON_sig_grid_fraction": round(
-            float((trend_model["mk_pvalue"].values < 0.05).sum() /
-                  np.isfinite(trend_model["mk_pvalue"].values).sum()), 3),
+            float((trend_model["mk_pvalue"].values[de_mask_mod] < 0.05).mean()), 3),
 
         # Germany-average series
         "EOBS_series_sen_slope_decade": round(obs_stats["sen_slope_decade"],   3),
