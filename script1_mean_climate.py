@@ -22,6 +22,7 @@ from utils import (
     reference_mean, compute_anomalies, area_mean, rmse,
     compute_trend_maps, series_stats,
     load_country_shape, plot_paired_trend_maps, plot_germany_series,
+    set_ipcc_style,
     START_YEAR, END_YEAR, ANOM_START, ANOM_END, DPI,
 )
 
@@ -39,9 +40,14 @@ os.makedirs(FIGDIR, exist_ok=True)
 os.makedirs(TABDIR, exist_ok=True)
 
 
-# ── colormap settings ─────────────────────────────────────────────────────────  ## To be checked if we can automatise the settings
-TEMP_LEVELS = [-0.20, -0.15, -0.10, -0.05, 0.00,
-                0.05,  0.10,  0.15,  0.20, 0.25, 0.30, 0.35]
+# ── colormap settings ─────────────────────────────────────────────────────────
+# IPCC AR6 WGI diverging palette (RdBu_r): white = 0, blue = cooling, red = warming.
+# TEMP_LEVELS extended to 0.60 °C/decade to resolve spatial variation
+# in both E-OBS (+0.15–+0.45) and ICON-CLM (+0.30–+0.60) warming rates.
+# Rule: len(LEVELS) = len(COLORS) + 1
+TEMP_LEVELS = [-0.60, -0.30, -0.20, -0.10,
+                0.00,
+                0.10,  0.20,  0.30,  0.40,  0.50,  0.55,  0.60]
 TEMP_COLORS = [
     "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#f7f7f7",
     "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#8c0d1c", "#67001f",
@@ -54,11 +60,6 @@ PREC_COLORS = [
 ]
 
 import matplotlib.pyplot as plt
-plt.rcParams.update({
-    "font.size": 8, "axes.labelsize": 8,
-    "xtick.labelsize": 6, "ytick.labelsize": 6,
-    "savefig.facecolor": "white", "figure.facecolor": "white",
-})
 
 
 # ── CDO file converter ────────────────────────────────────────────────────────
@@ -166,6 +167,8 @@ def process_mean_index(name, annual_model, annual_obs, unit,
 
 # ── main ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+
+    set_ipcc_style()   # IPCC AR6 WGI fonts, sizes, and figure defaults
 
     print("Loading Germany boundary...")
     gdf, geom = load_country_shape(GERMANY_SHP)

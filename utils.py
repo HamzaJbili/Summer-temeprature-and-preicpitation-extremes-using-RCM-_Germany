@@ -815,9 +815,9 @@ def plot_germany_series(
         # Raw annual scatter (small, semi-transparent)
         ax1.scatter(years, vals, color=col, s=9, alpha=0.30, zorder=2, linewidths=0)
 
-        # 5-yr running mean (dashed, lighter weight)
+        # 5-yr running mean (dashed) — slightly lighter than 11-yr for visual separation
         rm5 = s.rolling(5, center=True, min_periods=3).mean()
-        ax1.plot(years, rm5.values, "--", color=col, lw=1.0, alpha=0.60, zorder=3)
+        ax1.plot(years, rm5.values, "--", color=col, lw=1.5, alpha=0.80, zorder=3)
 
         # 11-yr running mean (solid, bold) — the main trend indicator
         rm11 = s.rolling(11, center=True, min_periods=6).mean()
@@ -886,9 +886,9 @@ def plot_germany_series(
     ax2.bar(anom_yrs - bar_w / 2, obs_neg, bar_w,
             color="#4575b4", alpha=0.78, label="E-OBS −anom", zorder=2)
 
-    # ICON-CLM anomaly as a stepped line
-    ax2.step(anom_yrs + bar_w / 2, mod_a, where="mid",
-             color="0.22", lw=1.25, label="ICON-CLM", zorder=4, alpha=0.85)
+    # ICON-CLM anomaly — solid line in model colour, clearly distinct from E-OBS bars
+    ax2.plot(anom_yrs, mod_a, "-", color=MOD_COL, lw=1.8,
+             label="ICON-CLM", zorder=4, alpha=0.88)
 
     # 11-yr running mean of E-OBS anomaly
     s_anom = pd.Series(obs_a, index=anom_yrs, dtype=float)
