@@ -819,9 +819,9 @@ def plot_germany_series(
         rm5 = s.rolling(5, center=True, min_periods=3).mean()
         ax1.plot(years, rm5.values, "--", color=col, lw=1.5, alpha=0.80, zorder=3)
 
-        # 11-yr running mean (solid, bold) — the main trend indicator
-        rm11 = s.rolling(11, center=True, min_periods=6).mean()
-        ax1.plot(years, rm11.values, "-", color=col, lw=2.2, alpha=0.92,
+        # 10-yr running mean (solid, bold) — IPCC AR6 standard decadal smoother
+        rm10 = s.rolling(10, center=True, min_periods=5).mean()
+        ax1.plot(years, rm10.values, "-", color=col, lw=2.2, alpha=0.92,
                  label=lbl, zorder=4)
 
     # Trend annotation boxes
@@ -857,8 +857,8 @@ def plot_germany_series(
     # Legend entry for running means
     from matplotlib.lines import Line2D
     custom_lines = [
-        Line2D([0], [0], color="0.40", lw=1.0, ls="--", label="5-yr mean"),
-        Line2D([0], [0], color="0.40", lw=2.2, ls="-",  label="11-yr mean"),
+        Line2D([0], [0], color="0.40", lw=1.5, ls="--", label="5-yr mean"),
+        Line2D([0], [0], color="0.40", lw=2.2, ls="-",  label="10-yr mean"),
         Line2D([0], [0], color="0.40", marker="o", ms=4,
                ls="none", alpha=0.4, label="Annual"),
     ]
@@ -889,13 +889,13 @@ def plot_germany_series(
     # 11-yr running means for both — smoothed decadal signal for direct comparison
     s_obs_a  = pd.Series(obs_a, index=anom_yrs, dtype=float)
     s_mod_a  = pd.Series(mod_a, index=anom_yrs, dtype=float)
-    rm11_obs = s_obs_a.rolling(11, center=True, min_periods=6).mean()
-    rm11_mod = s_mod_a.rolling(11, center=True, min_periods=6).mean()
+    rm10_obs = s_obs_a.rolling(10, center=True, min_periods=5).mean()
+    rm10_mod = s_mod_a.rolling(10, center=True, min_periods=5).mean()
 
-    ax2.plot(anom_yrs, rm11_obs.values, "-", color=OBS_COL, lw=2.0,
-             label="E-OBS 11-yr", zorder=5, alpha=0.90)
-    ax2.plot(anom_yrs, rm11_mod.values, "-", color=MOD_COL, lw=2.0,
-             label="ICON-CLM 11-yr", zorder=5, alpha=0.90)
+    ax2.plot(anom_yrs, rm10_obs.values, "-", color=OBS_COL, lw=2.0,
+             label="E-OBS 10-yr", zorder=5, alpha=0.90)
+    ax2.plot(anom_yrs, rm10_mod.values, "-", color=MOD_COL, lw=2.0,
+             label="ICON-CLM 10-yr", zorder=5, alpha=0.90)
 
     ylabel_anom = ylabel_anom or f"Anomaly [{ylabel}]"
     ax2.set_ylabel(ylabel_anom, fontsize=9)
