@@ -639,25 +639,20 @@ def annual_cwd(daily_jja, wet_min=WET_DAY_MIN):
 
 # ── map axis styling ──────────────────────────────────────────────────────────
 def style_axis(ax):
-    """
-    Apply uniform IPCC-style cartographic formatting to a map axis.
-
-    Sets background colour, lon/lat ticks, gridlines, axis borders, and
-    fixes the aspect ratio for Germany's domain.
-    """
-    ax.set_facecolor("#d9e9f2")   # light blue ocean/background
+    """Apply cartographic formatting to a map axis (Germany domain)."""
+    ax.set_facecolor("#d6e8f2")
     ax.set_xlim(MAP_EXTENT[0], MAP_EXTENT[1])
     ax.set_ylim(MAP_EXTENT[2], MAP_EXTENT[3])
     ax.set_box_aspect(1)
     ax.set_xticks(np.arange(6, 16, 3))
     ax.set_yticks(np.arange(48, 56, 2))
-    ax.set_xticklabels([f"{v}°E" for v in np.arange(6, 16, 3)], fontsize=6)
-    ax.set_yticklabels([f"{v}°N" for v in np.arange(48, 56, 2)], fontsize=6)
+    ax.set_xticklabels([f"{v}°E" for v in np.arange(6, 16, 3)], fontsize=7)
+    ax.set_yticklabels([f"{v}°N" for v in np.arange(48, 56, 2)], fontsize=7)
     ax.tick_params(axis="both", which="both", direction="out",
-                   top=False, right=False, pad=1.5)
-    ax.grid(True, linestyle="--", linewidth=0.35, color="0.60", alpha=0.60, zorder=0)
+                   top=False, right=False, pad=2)
+    ax.grid(True, linestyle=":", linewidth=0.35, color="0.55", alpha=0.55, zorder=0)
     for sp in ax.spines.values():
-        sp.set_linewidth(0.55)
+        sp.set_linewidth(0.65)
 
 
 # ── paired trend map figure (E-OBS vs ICON-CLM) ───────────────────────────────
@@ -668,31 +663,44 @@ def plot_paired_trend_maps(
     outfile, levels, colors,
     cbar_label,
     title_obs="E-OBS", title_model="ICON-CLM",
-    tick_fmt="%.1f",
+    tick_fmt="%.2f",
     suptitle=None,
 ):
     """
-    Two-panel trend map: (a) E-OBS, (b) ICON-CLM.
+    Publication-quality two-panel trend map: (a) E-OBS, (b) ICON-CLM.
 
-    - Shared horizontal colorbar at the bottom.
-    - Stippling (small dots) marks grid cells where the Mann-Kendall trend
-      is statistically significant at p < 0.05 (Yue-Wang correction).
-    - Maps are bilinearly upsampled for display smoothness (DISPLAY_FACTOR).
-    - Germany boundary is drawn from the shapefile.
+    - Colorbar auto-scaled to p2–p98 of combined obs+model data so the full
+      colour range is used regardless of the hardcoded level boundaries.
+    - Significance fraction and domain-mean trend annotated per panel.
+    - White halo on Germany border for visual separation from ocean fill.
+    - Stippling (MK p < 0.05) and note below colorbar.
     """
+    # ── Auto-scale levels to actual combined data range ───────────────────────
+    combined     = np.concatenate([obs_slope.values.ravel(), model_slope.values.ravel()])
+    valid        = combined[np.isfinite(combined)]
+    is_diverging = min(levels) < 0 < max(levels)
+
+    if len(valid) > 10:
+        p2, p98 = np.percentile(valid, 2), np.percentile(valid, 98)
+        n = len(levels)
+        if is_diverging:
+            vmax   = max(abs(p2), abs(p98))
+            levels = list(np.linspace(-vmax, vmax, n))
+        else:
+            levels = list(np.linspace(p2, p98, n))
+
     cmap = mcolors.ListedColormap(colors)
     norm = mcolors.BoundaryNorm(levels, cmap.N)
 
-    fig, axes = plt.subplots(1, 2, figsize=(9.0, 4.2))
+    fig, axes = plt.subplots(1, 2, figsize=(10.5, 5.5))
     fig.patch.set_facecolor("white")
     if suptitle:
-        fig.suptitle(suptitle, fontsize=10, fontweight="bold", y=0.99)
+        fig.suptitle(suptitle, fontsize=11, fontweight="bold", y=0.99)
 
     for ax, slope, pval, ds_title, panel_label in [
         (axes[0], obs_slope,   obs_pval,   title_obs,   "(a)"),
         (axes[1], model_slope, model_pval, title_model, "(b)"),
     ]:
-        # Bilinear upsampling for display quality
         fine = interp_display(slope)
         mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
         arr  = apply_mask(fine.values, mask)
@@ -703,35 +711,60 @@ def plot_paired_trend_maps(
             extend="both", antialiased=True,
         )
         clip_contourf(cf, ax, geom)
-        gdf.boundary.plot(ax=ax, color="black", linewidth=0.60, zorder=5)
 
-        # Stippling: small dots on the original (coarse) grid where p < ALPHA
+        # White halo + dark border for clean visual separation
+        gdf.boundary.plot(ax=ax, color="white",   linewidth=1.8, zorder=5)
+        gdf.boundary.plot(ax=ax, color="#1a1a1a", linewidth=0.70, zorder=6)
+
+        # Stippling on coarse grid where p < ALPHA
         lo2d, la2d = np.meshgrid(slope["lon"].values, slope["lat"].values)
         sig_mask   = pval.values < ALPHA
-        ax.scatter(
-            lo2d[sig_mask], la2d[sig_mask],
-            s=0.55, c="#1a1a1a", alpha=0.28, zorder=6, rasterized=True,
-        )
+        n_total    = int(np.isfinite(pval.values).sum())
+        sig_frac   = sig_mask.sum() / n_total * 100 if n_total > 0 else 0.0
+        ax.scatter(lo2d[sig_mask], la2d[sig_mask],
+                   s=2.0, c="#1a1a1a", alpha=0.40, marker=".", zorder=7, rasterized=True)
 
-        # Panel label (top-left inset box)
+        # Panel label
         ax.text(0.03, 0.97, panel_label, transform=ax.transAxes,
-                ha="left", va="top", fontsize=9, fontweight="bold",
-                bbox=dict(boxstyle="round,pad=0.18", fc="white",
-                          ec="none", alpha=0.75))
-        ax.set_title(ds_title, fontsize=9.5, fontweight="bold", pad=4)
+                ha="left", va="top", fontsize=11, fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.22", fc="white",
+                          ec="#888888", alpha=0.92, lw=0.6))
+
+        ax.set_title(ds_title, fontsize=11, fontweight="bold", pad=6)
+
+        # Significance fraction — bottom-right
+        ax.text(0.97, 0.03, f"Sig. area: {sig_frac:.0f}%",
+                transform=ax.transAxes, ha="right", va="bottom",
+                fontsize=8, color="#222222",
+                bbox=dict(boxstyle="round,pad=0.22", fc="white",
+                          ec="#aaaaaa", alpha=0.92, lw=0.5))
+
+        # Domain-mean trend — bottom-left
+        mean_v = float(np.nanmean(slope.values))
+        sign   = "+" if mean_v >= 0 else ""
+        ax.text(0.03, 0.03, f"Mean: {sign}{mean_v:.3f}",
+                transform=ax.transAxes, ha="left", va="bottom",
+                fontsize=8, color="#222222",
+                bbox=dict(boxstyle="round,pad=0.22", fc="white",
+                          ec="#aaaaaa", alpha=0.92, lw=0.5))
+
         style_axis(ax)
 
-    plt.subplots_adjust(left=0.05, right=0.97, top=0.88, bottom=0.21, wspace=0.14)
+    plt.subplots_adjust(left=0.04, right=0.97, top=0.88, bottom=0.25, wspace=0.10)
 
-    # Shared horizontal colorbar
-    cax = fig.add_axes([0.15, 0.09, 0.70, 0.042])
-    cb  = ColorbarBase(
-        cax, cmap=cmap, norm=norm, boundaries=levels,
-        ticks=levels, orientation="horizontal", extend="both",
-    )
-    cb.ax.tick_params(labelsize=7, pad=1.5)
+    # ── Colorbar: clean rounded ticks ────────────────────────────────────────
+    cb_ticks = np.round(np.linspace(levels[0], levels[-1], min(7, len(levels))), 2)
+    cax = fig.add_axes([0.12, 0.11, 0.76, 0.045])
+    cb  = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=levels,
+                       ticks=cb_ticks.tolist(), orientation="horizontal", extend="both")
+    cb.ax.tick_params(labelsize=9, pad=2.5)
     cb.ax.xaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
-    cb.set_label(cbar_label, fontsize=8, labelpad=3)
+    cb.set_label(cbar_label, fontsize=10, labelpad=4, fontweight="bold")
+
+    # Stippling note below colorbar
+    fig.text(0.50, 0.025,
+             "Stippling: Mann-Kendall p < 0.05 (Yue-Wang autocorrelation correction)",
+             ha="center", va="bottom", fontsize=8, color="#555555", style="italic")
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
