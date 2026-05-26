@@ -735,8 +735,8 @@ def plot_paired_trend_maps(
         # Significance fraction — bottom-right
         ax.text(0.97, 0.03, f"Sig. area: {sig_frac:.0f}%",
                 transform=ax.transAxes, ha="right", va="bottom",
-                fontsize=8, color="#222222",
-                bbox=dict(boxstyle="round,pad=0.22", fc="white",
+                fontsize=7.5, color="#222222",
+                bbox=dict(boxstyle="round,pad=0.20", fc="white",
                           ec="#aaaaaa", alpha=0.92, lw=0.5))
 
         # Domain-mean trend — bottom-left
@@ -744,27 +744,27 @@ def plot_paired_trend_maps(
         sign   = "+" if mean_v >= 0 else ""
         ax.text(0.03, 0.03, f"Mean: {sign}{mean_v:.3f}",
                 transform=ax.transAxes, ha="left", va="bottom",
-                fontsize=8, color="#222222",
-                bbox=dict(boxstyle="round,pad=0.22", fc="white",
+                fontsize=7.5, color="#222222",
+                bbox=dict(boxstyle="round,pad=0.20", fc="white",
                           ec="#aaaaaa", alpha=0.92, lw=0.5))
 
         style_axis(ax)
 
-    plt.subplots_adjust(left=0.04, right=0.97, top=0.88, bottom=0.25, wspace=0.10)
+    plt.subplots_adjust(left=0.04, right=0.97, top=0.88, bottom=0.20, wspace=0.10)
 
-    # ── Colorbar: clean rounded ticks ────────────────────────────────────────
-    cb_ticks = np.round(np.linspace(levels[0], levels[-1], min(7, len(levels))), 2)
-    cax = fig.add_axes([0.12, 0.11, 0.76, 0.045])
+    # ── Colorbar: MaxNLocator for clean round tick values ─────────────────────
+    from matplotlib.ticker import MaxNLocator
+    loc      = MaxNLocator(nbins=6, steps=[1, 2, 2.5, 5, 10])
+    cb_ticks = loc.tick_values(levels[0], levels[-1])
+    # Keep only ticks within the level range
+    cb_ticks = [t for t in cb_ticks if levels[0] <= t <= levels[-1]]
+
+    cax = fig.add_axes([0.12, 0.08, 0.76, 0.045])
     cb  = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=levels,
-                       ticks=cb_ticks.tolist(), orientation="horizontal", extend="both")
+                       ticks=cb_ticks, orientation="horizontal", extend="both")
     cb.ax.tick_params(labelsize=9, pad=2.5)
     cb.ax.xaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
-    cb.set_label(cbar_label, fontsize=10, labelpad=4, fontweight="bold")
-
-    # Stippling note below colorbar
-    fig.text(0.50, 0.025,
-             "Stippling: Mann-Kendall p < 0.05 (Yue-Wang autocorrelation correction)",
-             ha="center", va="bottom", fontsize=8, color="#555555", style="italic")
+    cb.set_label(cbar_label, fontsize=9, labelpad=4, fontweight="normal")
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
