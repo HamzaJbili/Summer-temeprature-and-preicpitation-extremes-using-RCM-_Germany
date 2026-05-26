@@ -158,11 +158,14 @@ def process_mean_index(name, annual_model, annual_obs, unit,
             float(np.nanmean(trend_model["sen_slope"].values
                              - trend_obs["sen_slope"].values)), 3),
 
-        # Fraction of significant grid cells
+        # Fraction of significant grid cells — denominator is valid (Germany) cells only,
+        # matching the map annotation which uses np.isfinite(pval).sum() as denominator.
         "EOBS_sig_grid_fraction": round(
-            float(np.nanmean((trend_obs["mk_pvalue"].values   < 0.05).astype(float))), 3),
+            float((trend_obs["mk_pvalue"].values < 0.05).sum() /
+                  np.isfinite(trend_obs["mk_pvalue"].values).sum()), 3),
         "ICON_sig_grid_fraction": round(
-            float(np.nanmean((trend_model["mk_pvalue"].values < 0.05).astype(float))), 3),
+            float((trend_model["mk_pvalue"].values < 0.05).sum() /
+                  np.isfinite(trend_model["mk_pvalue"].values).sum()), 3),
 
         # Germany-average series
         "EOBS_series_sen_slope_decade": round(obs_stats["sen_slope_decade"],   3),
