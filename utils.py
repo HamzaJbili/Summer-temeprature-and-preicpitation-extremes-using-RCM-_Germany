@@ -745,24 +745,6 @@ def plot_paired_trend_maps(
         ax.set_title(ds_title, fontsize=12, fontweight="bold", pad=7,
                      color="#111111")
 
-        # Domain-mean trend annotation (bottom-left corner)
-        mean_trend = float(np.nanmean(slope.values))
-        sign = "+" if mean_trend >= 0 else ""
-        ax.text(0.03, 0.03,
-                f"Mean: {sign}{mean_trend:.3f}",
-                transform=ax.transAxes, ha="left", va="bottom",
-                fontsize=7.5, color="#333333",
-                bbox=dict(boxstyle="round,pad=0.20", fc="white",
-                          ec="#bbbbbb", alpha=0.88, lw=0.5))
-
-        # Significance fraction annotation (bottom-right corner)
-        ax.text(0.97, 0.03,
-                f"Sig.: {sig_frac:.0f}%",
-                transform=ax.transAxes, ha="right", va="bottom",
-                fontsize=7.5, color="#333333",
-                bbox=dict(boxstyle="round,pad=0.20", fc="white",
-                          ec="#bbbbbb", alpha=0.88, lw=0.5))
-
         style_axis(ax, fontsize=7.5)
 
     # Leave room at bottom: colorbar ~y=0.13, stippling note ~y=0.03
@@ -875,6 +857,12 @@ def plot_germany_series(
 
     # ICON-CLM raw annual line (dark grey)
     ax2.plot(anom_yrs, mod_a, color="0.25", lw=1.0, label="ICON-CLM", zorder=4)
+
+    # E-OBS 10-yr running mean (bold green)
+    s_obs_a  = pd.Series(obs_a, index=anom_yrs, dtype=float)
+    rm10_obs = s_obs_a.rolling(10, center=True, min_periods=5).mean()
+    ax2.plot(anom_yrs, rm10_obs.values, "-", color=OBS_COL, lw=2.0,
+             label="E-OBS 10-yr", zorder=5, alpha=0.90)
 
     ylabel_anom = ylabel_anom or f"Anomaly [{ylabel}]"
     ax2.set_ylabel(ylabel_anom, fontsize=9)
