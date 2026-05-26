@@ -745,9 +745,19 @@ def plot_paired_trend_maps(
         ax.set_title(ds_title, fontsize=12, fontweight="bold", pad=7,
                      color="#111111")
 
+        # Domain-mean trend annotation (bottom-left corner)
+        mean_trend = float(np.nanmean(slope.values))
+        sign = "+" if mean_trend >= 0 else ""
+        ax.text(0.03, 0.03,
+                f"Mean: {sign}{mean_trend:.3f}",
+                transform=ax.transAxes, ha="left", va="bottom",
+                fontsize=7.5, color="#333333",
+                bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                          ec="#bbbbbb", alpha=0.88, lw=0.5))
+
         # Significance fraction annotation (bottom-right corner)
         ax.text(0.97, 0.03,
-                f"Sig. area: {sig_frac:.0f}%",
+                f"Sig.: {sig_frac:.0f}%",
                 transform=ax.transAxes, ha="right", va="bottom",
                 fontsize=7.5, color="#333333",
                 bbox=dict(boxstyle="round,pad=0.20", fc="white",
@@ -755,31 +765,28 @@ def plot_paired_trend_maps(
 
         style_axis(ax, fontsize=7.5)
 
-    plt.subplots_adjust(left=0.04, right=0.97, top=0.87, bottom=0.22, wspace=0.10)
+    # Leave room at bottom: colorbar ~y=0.13, stippling note ~y=0.03
+    plt.subplots_adjust(left=0.04, right=0.97, top=0.87, bottom=0.26, wspace=0.10)
 
     # ── Shared horizontal colorbar ────────────────────────────────────────────
-    # Thin ticks automatically when there are more than ~7 levels
-    n_lvl    = len(levels)
-    step     = max(1, n_lvl // 7)
-    cb_ticks = levels[::step]
+    # Compute clean evenly-spaced tick values (rounded to 2 d.p.) independently
+    # of the internal boundary levels so the displayed numbers are always tidy.
+    cb_ticks = np.round(np.linspace(levels[0], levels[-1], min(7, len(levels))), 2)
 
-    cax = fig.add_axes([0.12, 0.08, 0.76, 0.050])
+    cax = fig.add_axes([0.12, 0.13, 0.76, 0.048])
     cb  = ColorbarBase(
         cax, cmap=cmap, norm=norm, boundaries=levels,
-        ticks=cb_ticks, orientation="horizontal", extend="both",
+        ticks=cb_ticks.tolist(), orientation="horizontal", extend="both",
     )
-    cb.ax.tick_params(labelsize=8.5, pad=2.5)
+    cb.ax.tick_params(labelsize=9, pad=3)
     cb.ax.xaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
     cb.set_label(cbar_label, fontsize=10, labelpad=5, fontweight="bold")
 
-    # Stippling legend entry
-    from matplotlib.lines import Line2D
-    fig.legend(
-        handles=[Line2D([0], [0], marker=".", color="#111111", ms=7,
-                        ls="none", alpha=0.55,
-                        label="Stippling: MK p < 0.05 (Yue-Wang)")],
-        loc="lower center", bbox_to_anchor=(0.50, 0.001),
-        fontsize=7.5, frameon=True, framealpha=0.88, edgecolor="0.70",
+    # Stippling note — placed below the colorbar, never overlapping it
+    fig.text(
+        0.50, 0.04,
+        "● Stippling: Mann-Kendall p < 0.05 (Yue-Wang autocorrelation correction)",
+        ha="center", va="bottom", fontsize=8, color="#444444", style="italic",
     )
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
@@ -798,8 +805,7 @@ def plot_germany_series(
     Two-panel stacked figure for Germany-average values.
 
     Top panel (a)    — annual scatter + 5-yr dashed + 10-yr solid for both datasets.
-    Bottom panel (b) — E-OBS sign-coloured bars, E-OBS 10-yr running mean (bold),
-                       ICON-CLM raw annual line (dark grey).
+    Bottom panel (b) — E-OBS sign-coloured bars + ICON-CLM raw annual line (dark grey).
     """
     from matplotlib.lines import Line2D
 
@@ -869,12 +875,6 @@ def plot_germany_series(
 
     # ICON-CLM raw annual line (dark grey)
     ax2.plot(anom_yrs, mod_a, color="0.25", lw=1.0, label="ICON-CLM", zorder=4)
-
-    # E-OBS 10-yr running mean (bold green)
-    s_obs_a  = pd.Series(obs_a, index=anom_yrs, dtype=float)
-    rm10_obs = s_obs_a.rolling(10, center=True, min_periods=5).mean()
-    ax2.plot(anom_yrs, rm10_obs.values, "-", color=OBS_COL, lw=2.0,
-             label="E-OBS 10-yr", zorder=5, alpha=0.90)
 
     ylabel_anom = ylabel_anom or f"Anomaly [{ylabel}]"
     ax2.set_ylabel(ylabel_anom, fontsize=9)
