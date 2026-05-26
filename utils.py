@@ -638,27 +638,26 @@ def annual_cwd(daily_jja, wet_min=WET_DAY_MIN):
 
 
 # ── map axis styling ──────────────────────────────────────────────────────────
-def style_axis(ax, fontsize=7):
+def style_axis(ax):
     """
-    Apply cartographic formatting to a map axis (Germany domain).
+    Apply uniform IPCC-style cartographic formatting to a map axis.
 
-    Sets background colour, lon/lat ticks, gridlines, and aspect ratio.
-    *fontsize* controls tick-label size so the caller can tune per layout.
+    Sets background colour, lon/lat ticks, gridlines, axis borders, and
+    fixes the aspect ratio for Germany's domain.
     """
-    ax.set_facecolor("#cfe0ec")   # soft steel-blue ocean background
+    ax.set_facecolor("#d9e9f2")   # light blue ocean/background
     ax.set_xlim(MAP_EXTENT[0], MAP_EXTENT[1])
     ax.set_ylim(MAP_EXTENT[2], MAP_EXTENT[3])
     ax.set_box_aspect(1)
     ax.set_xticks(np.arange(6, 16, 3))
     ax.set_yticks(np.arange(48, 56, 2))
-    ax.set_xticklabels([f"{v}°E" for v in np.arange(6, 16, 3)], fontsize=fontsize)
-    ax.set_yticklabels([f"{v}°N" for v in np.arange(48, 56, 2)], fontsize=fontsize)
+    ax.set_xticklabels([f"{v}°E" for v in np.arange(6, 16, 3)], fontsize=6)
+    ax.set_yticklabels([f"{v}°N" for v in np.arange(48, 56, 2)], fontsize=6)
     ax.tick_params(axis="both", which="both", direction="out",
-                   top=False, right=False, pad=2)
-    ax.grid(True, linestyle=":", linewidth=0.30, color="0.55", alpha=0.50, zorder=0)
+                   top=False, right=False, pad=1.5)
+    ax.grid(True, linestyle="--", linewidth=0.35, color="0.60", alpha=0.60, zorder=0)
     for sp in ax.spines.values():
-        sp.set_linewidth(0.70)
-        sp.set_color("#555555")
+        sp.set_linewidth(0.55)
 
 
 # ── paired trend map figure (E-OBS vs ICON-CLM) ───────────────────────────────
@@ -669,41 +668,25 @@ def plot_paired_trend_maps(
     outfile, levels, colors,
     cbar_label,
     title_obs="E-OBS", title_model="ICON-CLM",
-    tick_fmt="%.2f",
+    tick_fmt="%.1f",
     suptitle=None,
 ):
     """
     Two-panel trend map: (a) E-OBS, (b) ICON-CLM.
 
-    - Shared horizontal colorbar at the bottom with auto-thinned ticks.
-    - Stippling marks grid cells significant at p < 0.05 (MK Yue-Wang).
-    - White halo around Germany border for visual separation from ocean.
-    - Percentage of significant grid cells annotated per panel.
-    - Maps bilinearly upsampled for smoother display (DISPLAY_FACTOR).
+    - Shared horizontal colorbar at the bottom.
+    - Stippling (small dots) marks grid cells where the Mann-Kendall trend
+      is statistically significant at p < 0.05 (Yue-Wang correction).
+    - Maps are bilinearly upsampled for display smoothness (DISPLAY_FACTOR).
+    - Germany boundary is drawn from the shapefile.
     """
-    # ── Auto-adapt levels to the actual data range ────────────────────────────
-    # Prevents one or two colours from dominating when the data span is narrower
-    # than the manually-specified level range.
-    combined  = np.concatenate([obs_slope.values.ravel(), model_slope.values.ravel()])
-    valid     = combined[np.isfinite(combined)]
-    is_diverging = (min(levels) < 0 < max(levels))
-
-    if len(valid) > 10:
-        p2, p98 = np.percentile(valid, 2), np.percentile(valid, 98)
-        n = len(levels)          # keep same number of boundaries → same colours
-        if is_diverging:
-            vmax = max(abs(p2), abs(p98))
-            levels = list(np.linspace(-vmax, vmax, n))
-        else:
-            levels = list(np.linspace(p2, p98, n))
-
     cmap = mcolors.ListedColormap(colors)
     norm = mcolors.BoundaryNorm(levels, cmap.N)
 
-    fig, axes = plt.subplots(1, 2, figsize=(12.0, 5.8))
+    fig, axes = plt.subplots(1, 2, figsize=(9.0, 4.2))
     fig.patch.set_facecolor("white")
     if suptitle:
-        fig.suptitle(suptitle, fontsize=11, fontweight="bold", y=0.99)
+        fig.suptitle(suptitle, fontsize=10, fontweight="bold", y=0.99)
 
     for ax, slope, pval, ds_title, panel_label in [
         (axes[0], obs_slope,   obs_pval,   title_obs,   "(a)"),
@@ -720,56 +703,35 @@ def plot_paired_trend_maps(
             extend="both", antialiased=True,
         )
         clip_contourf(cf, ax, geom)
+        gdf.boundary.plot(ax=ax, color="black", linewidth=0.60, zorder=5)
 
-        # White halo first so the black border stands out from the coloured fill
-        gdf.boundary.plot(ax=ax, color="white",   linewidth=2.2, zorder=5)
-        gdf.boundary.plot(ax=ax, color="#111111", linewidth=0.85, zorder=6)
-
-        # Stippling on original (coarse) grid where p < ALPHA — larger, more visible
+        # Stippling: small dots on the original (coarse) grid where p < ALPHA
         lo2d, la2d = np.meshgrid(slope["lon"].values, slope["lat"].values)
         sig_mask   = pval.values < ALPHA
-        n_total    = int(np.isfinite(pval.values).sum())
-        sig_frac   = (sig_mask.sum() / n_total * 100) if n_total > 0 else 0.0
         ax.scatter(
             lo2d[sig_mask], la2d[sig_mask],
-            s=3.5, c="#111111", alpha=0.48, marker=".", zorder=7, rasterized=True,
+            s=0.55, c="#1a1a1a", alpha=0.28, zorder=6, rasterized=True,
         )
 
-        # Panel label — prominent, clean white box with thin border
+        # Panel label (top-left inset box)
         ax.text(0.03, 0.97, panel_label, transform=ax.transAxes,
-                ha="left", va="top", fontsize=12, fontweight="bold",
-                bbox=dict(boxstyle="round,pad=0.25", fc="white",
-                          ec="#888888", alpha=0.92, lw=0.7))
+                ha="left", va="top", fontsize=9, fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.18", fc="white",
+                          ec="none", alpha=0.75))
+        ax.set_title(ds_title, fontsize=9.5, fontweight="bold", pad=4)
+        style_axis(ax)
 
-        # Dataset title
-        ax.set_title(ds_title, fontsize=12, fontweight="bold", pad=7,
-                     color="#111111")
+    plt.subplots_adjust(left=0.05, right=0.97, top=0.88, bottom=0.21, wspace=0.14)
 
-        style_axis(ax, fontsize=7.5)
-
-    # Leave room at bottom: colorbar ~y=0.13, stippling note ~y=0.03
-    plt.subplots_adjust(left=0.04, right=0.97, top=0.87, bottom=0.26, wspace=0.10)
-
-    # ── Shared horizontal colorbar ────────────────────────────────────────────
-    # Compute clean evenly-spaced tick values (rounded to 2 d.p.) independently
-    # of the internal boundary levels so the displayed numbers are always tidy.
-    cb_ticks = np.round(np.linspace(levels[0], levels[-1], min(7, len(levels))), 2)
-
-    cax = fig.add_axes([0.12, 0.13, 0.76, 0.048])
+    # Shared horizontal colorbar
+    cax = fig.add_axes([0.15, 0.09, 0.70, 0.042])
     cb  = ColorbarBase(
         cax, cmap=cmap, norm=norm, boundaries=levels,
-        ticks=cb_ticks.tolist(), orientation="horizontal", extend="both",
+        ticks=levels, orientation="horizontal", extend="both",
     )
-    cb.ax.tick_params(labelsize=9, pad=3)
+    cb.ax.tick_params(labelsize=7, pad=1.5)
     cb.ax.xaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
-    cb.set_label(cbar_label, fontsize=10, labelpad=5, fontweight="bold")
-
-    # Stippling note — placed below the colorbar, never overlapping it
-    fig.text(
-        0.50, 0.04,
-        "● Stippling: Mann-Kendall p < 0.05 (Yue-Wang autocorrelation correction)",
-        ha="center", va="bottom", fontsize=8, color="#444444", style="italic",
-    )
+    cb.set_label(cbar_label, fontsize=8, labelpad=3)
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
