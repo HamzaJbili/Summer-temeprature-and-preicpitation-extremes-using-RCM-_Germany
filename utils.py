@@ -681,13 +681,31 @@ def plot_paired_trend_maps(
     is_diverging = min(levels) < 0 < max(levels)
 
     if len(valid) > 10:
+        from matplotlib.ticker import MaxNLocator
         p2, p98 = np.percentile(valid, 2), np.percentile(valid, 98)
-        n = len(levels)
+
         if is_diverging:
-            vmax   = max(abs(p2), abs(p98))
-            levels = list(np.linspace(-vmax, vmax, n))
+            vmax = max(abs(p2), abs(p98))
+            lo, hi = -vmax, vmax
         else:
-            levels = list(np.linspace(p2, p98, n))
+            lo, hi = p2, p98
+
+        # Derive clean round levels with MaxNLocator — these become BOTH the
+        # BoundaryNorm boundaries AND the colorbar ticks so they are always
+        # perfectly aligned (tick marks sit exactly at colour edges).
+        loc   = MaxNLocator(nbins=8, steps=[1, 2, 2.5, 5, 10],
+                            symmetric=is_diverging)
+        nice  = loc.tick_values(lo, hi)
+        margin = (hi - lo) * 0.08
+        nice  = [float(t) for t in nice
+                 if (lo - margin) <= t <= (hi + margin)]
+
+        if len(nice) >= 3:
+            # Resample the colour list to match the new number of intervals
+            n_new  = len(nice) - 1
+            idxs   = np.round(np.linspace(0, len(colors) - 1, n_new)).astype(int)
+            colors = [colors[i] for i in idxs]
+            levels = nice
 
     cmap = mcolors.ListedColormap(colors)
     norm = mcolors.BoundaryNorm(levels, cmap.N)
@@ -752,16 +770,10 @@ def plot_paired_trend_maps(
 
     plt.subplots_adjust(left=0.04, right=0.97, top=0.88, bottom=0.20, wspace=0.10)
 
-    # ── Colorbar: MaxNLocator for clean round tick values ─────────────────────
-    from matplotlib.ticker import MaxNLocator
-    loc      = MaxNLocator(nbins=6, steps=[1, 2, 2.5, 5, 10])
-    cb_ticks = loc.tick_values(levels[0], levels[-1])
-    # Keep only ticks within the level range
-    cb_ticks = [t for t in cb_ticks if levels[0] <= t <= levels[-1]]
-
+    # ── Colorbar — ticks = levels so labels sit exactly at colour edges ───────
     cax = fig.add_axes([0.12, 0.08, 0.76, 0.045])
     cb  = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=levels,
-                       ticks=cb_ticks, orientation="horizontal", extend="both")
+                       ticks=levels, orientation="horizontal", extend="both")
     cb.ax.tick_params(labelsize=9, pad=2.5)
     cb.ax.xaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
     cb.set_label(cbar_label, fontsize=9, labelpad=4, fontweight="normal")
