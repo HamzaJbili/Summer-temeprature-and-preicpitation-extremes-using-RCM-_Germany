@@ -162,11 +162,11 @@ def process_mean_index(name, annual_model, annual_obs, unit,
             float(np.nanmean(trend_model["sen_slope"].values
                              - trend_obs["sen_slope"].values)), 3),
 
-        # Fraction of significant grid cells — Germany cells only
-        "EOBS_sig_grid_fraction": round(
-            float((trend_obs["mk_pvalue"].values[de_mask_obs]   < 0.05).mean()), 3),
-        "ICON_sig_grid_fraction": round(
-            float((trend_model["mk_pvalue"].values[de_mask_mod] < 0.05).mean()), 3),
+        # Fraction of significant grid cells — Germany cells only, expressed as %
+        "EOBS_sig_grid_pct": round(
+            float((trend_obs["mk_pvalue"].values[de_mask_obs]   < 0.05).mean()) * 100, 1),
+        "ICON_sig_grid_pct": round(
+            float((trend_model["mk_pvalue"].values[de_mask_mod] < 0.05).mean()) * 100, 1),
 
         # Germany-average series
         "EOBS_series_sen_slope_decade": round(obs_stats["sen_slope_decade"],   3),
