@@ -410,7 +410,7 @@ def plot_climatology_maps(obs_clim, mod_clim, gdf, geom, outfile,
     )):
         ax.set_extent(MAP_EXTENT, crs=PC)
         ax.set_facecolor("#d6e8f2")
-        ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#c8c8c8", zorder=1)
+        ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
 
         fine = interp_display(da)
         mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
@@ -731,7 +731,7 @@ def plot_paired_trend_maps(
         ax = fig.add_subplot(1, 2, i + 1, projection=PROJ)
         ax.set_extent(MAP_EXTENT, crs=PC)
         ax.set_facecolor("#d6e8f2")
-        ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#c8c8c8", zorder=1)
+        ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
 
         fine    = interp_display(slope)
         de_mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
@@ -959,7 +959,7 @@ def plot_precipitation_overview(index_meta, gdf, geom, outfile):
             ax = axes[row, col] if n > 1 else axes[col]
             ax.set_extent(MAP_EXTENT, crs=PC)
             ax.set_facecolor("#d6e8f2")
-            ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#c8c8c8", zorder=1)
+            ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
 
             fine = interp_display(slope)
             mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
