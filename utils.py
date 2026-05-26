@@ -795,45 +795,103 @@ def plot_germany_series(
     obs_stats=None, model_stats=None,
 ):
     """
-    Two-panel figure: (left) absolute annual values, (right) anomalies vs 1991-2020.
+    Two-panel stacked figure for Germany-average values.
 
-    Left panel  — raw annual lines for E-OBS (green) and ICON-CLM (red).
-    Right panel — E-OBS sign-coloured bars (red/blue) + raw ICON-CLM dark line.
+    Top panel (a)    — annual scatter + 5-yr dashed + 10-yr solid for both datasets.
+    Bottom panel (b) — E-OBS sign-coloured bars, E-OBS 10-yr running mean (bold),
+                       ICON-CLM raw annual line (dark grey).
     """
-    fig, axes = plt.subplots(1, 2, figsize=(10, 3.8))
+    from matplotlib.lines import Line2D
+
+    fig, (ax1, ax2) = plt.subplots(
+        2, 1, figsize=(11, 7.0), sharex=True,
+        gridspec_kw={"hspace": 0.05, "height_ratios": [1.45, 1]},
+    )
     fig.patch.set_facecolor("white")
+    fig.suptitle(title, fontsize=11, fontweight="bold", y=0.98)
 
-    years_abs  = obs_series["year"].values
-    years_anom = obs_anom["year"].values
+    OBS_COL = "#1b7837"    # E-OBS: dark green
+    MOD_COL = "#b2182b"    # ICON-CLM: dark red
 
-    # ── Left panel: absolute annual values ───────────────────────────────────
-    axes[0].plot(years_abs, obs_series.values,
-                 color="#1b7837", lw=1.2, label="E-OBS")
-    axes[0].plot(years_abs, model_series.values,
-                 color="#b2182b", lw=1.2, label="ICON-CLM", alpha=0.85)
-    axes[0].axhline(0, color="0.6", lw=0.5, ls="--")
-    axes[0].set_xlabel("Year", fontsize=8)
-    axes[0].set_ylabel(ylabel, fontsize=8)
-    axes[0].set_title(f"{title} — absolute", fontsize=8)
-    axes[0].legend(fontsize=7, frameon=False)
-    axes[0].tick_params(labelsize=7)
-    axes[0].grid(True, linestyle="--", linewidth=0.35, alpha=0.5)
+    years    = obs_series["year"].values.astype(int)
+    obs_vals = obs_series.values.astype(float)
+    mod_vals = model_series.values.astype(float)
 
-    # ── Right panel: anomalies ────────────────────────────────────────────────
-    axes[1].bar(years_anom, obs_anom.values,
-                color=["#b2182b" if v > 0 else "#2166ac" for v in obs_anom.values],
-                width=0.4, align="edge", label="E-OBS", alpha=0.75)
-    axes[1].plot(years_anom, model_anom.values,
-                 color="0.25", lw=1.0, label="ICON-CLM", zorder=5)
-    axes[1].axhline(0, color="0.4", lw=0.7)
-    axes[1].set_xlabel("Year", fontsize=8)
-    axes[1].set_ylabel(ylabel_anom or ylabel, fontsize=8)
-    axes[1].set_title(f"{title} — anomaly vs 1991-2020", fontsize=8)
-    axes[1].legend(fontsize=7, frameon=False)
-    axes[1].tick_params(labelsize=7)
-    axes[1].grid(True, linestyle="--", linewidth=0.35, alpha=0.5)
+    # ── Top panel: absolute annual values ────────────────────────────────────
+    for vals, col, lbl in [
+        (obs_vals, OBS_COL, "E-OBS"),
+        (mod_vals, MOD_COL, "ICON-CLM"),
+    ]:
+        s = pd.Series(vals, index=years, dtype=float)
+        ax1.scatter(years, vals, color=col, s=9, alpha=0.30, zorder=2, linewidths=0)
+        rm5  = s.rolling(5,  center=True, min_periods=3).mean()
+        ax1.plot(years, rm5.values,  "--", color=col, lw=1.5, alpha=0.80, zorder=3)
+        rm10 = s.rolling(10, center=True, min_periods=5).mean()
+        ax1.plot(years, rm10.values, "-",  color=col, lw=2.2, alpha=0.92,
+                 label=lbl, zorder=4)
 
-    plt.tight_layout()
+    custom_lines = [
+        Line2D([0], [0], color="0.40", lw=1.5, ls="--", label="5-yr mean"),
+        Line2D([0], [0], color="0.40", lw=2.2, ls="-",  label="10-yr mean"),
+        Line2D([0], [0], color="0.40", marker="o", ms=4,
+               ls="none", alpha=0.4, label="Annual"),
+    ]
+    ax1.legend(
+        handles=list(ax1.get_legend_handles_labels()[0]) + custom_lines,
+        fontsize=7.5, frameon=True, framealpha=0.85, edgecolor="0.70",
+        loc="lower right", ncol=2,
+    )
+    ax1.set_ylabel(ylabel, fontsize=9)
+    ax1.tick_params(labelsize=8)
+    ax1.grid(True, linestyle="--", linewidth=0.35, alpha=0.55, zorder=0)
+    ax1.spines["top"].set_visible(False)
+    ax1.spines["right"].set_visible(False)
+    ax1.spines[["left", "bottom"]].set_linewidth(0.7)
+    ax1.text(0.005, 0.98, "(a)", transform=ax1.transAxes,
+             fontsize=10, fontweight="bold", va="top")
+
+    # ── Bottom panel: anomalies ───────────────────────────────────────────────
+    anom_yrs = obs_anom["year"].values.astype(int)
+    obs_a    = obs_anom.values.astype(float)
+    mod_a    = model_anom.values.astype(float)
+
+    ax2.axvspan(1991, 2020, color="#f0f0f0", zorder=0)
+    ax2.axhline(0, color="0.35", lw=0.80, zorder=1)
+
+    # E-OBS sign-coloured bars
+    bar_w   = 0.42
+    obs_pos = np.where(obs_a >= 0, obs_a, 0.0)
+    obs_neg = np.where(obs_a < 0,  obs_a, 0.0)
+    ax2.bar(anom_yrs - bar_w / 2, obs_pos, bar_w,
+            color="#d73027", alpha=0.78, label="E-OBS +anom", zorder=2)
+    ax2.bar(anom_yrs - bar_w / 2, obs_neg, bar_w,
+            color="#4575b4", alpha=0.78, label="E-OBS −anom", zorder=2)
+
+    # ICON-CLM raw annual line (dark grey)
+    ax2.plot(anom_yrs, mod_a, color="0.25", lw=1.0, label="ICON-CLM", zorder=4)
+
+    # E-OBS 10-yr running mean (bold green)
+    s_obs_a  = pd.Series(obs_a, index=anom_yrs, dtype=float)
+    rm10_obs = s_obs_a.rolling(10, center=True, min_periods=5).mean()
+    ax2.plot(anom_yrs, rm10_obs.values, "-", color=OBS_COL, lw=2.0,
+             label="E-OBS 10-yr", zorder=5, alpha=0.90)
+
+    ylabel_anom = ylabel_anom or f"Anomaly [{ylabel}]"
+    ax2.set_ylabel(ylabel_anom, fontsize=9)
+    ax2.set_xlabel("Year", fontsize=9)
+    ax2.legend(fontsize=7.5, frameon=True, framealpha=0.85, edgecolor="0.70",
+               loc="lower left", ncol=2)
+    ax2.tick_params(labelsize=8)
+    ax2.grid(True, linestyle="--", linewidth=0.35, alpha=0.55, zorder=0)
+    ax2.spines["top"].set_visible(False)
+    ax2.spines["right"].set_visible(False)
+    ax2.spines[["left", "bottom"]].set_linewidth(0.7)
+    ax2.text(0.005, 0.98, "(b)", transform=ax2.transAxes,
+             fontsize=10, fontweight="bold", va="top")
+    ax2.text(0.79, 0.96, "grey band = 1991-2020 ref. period",
+             transform=ax2.transAxes, fontsize=6.5, color="0.55", va="top")
+
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
 
