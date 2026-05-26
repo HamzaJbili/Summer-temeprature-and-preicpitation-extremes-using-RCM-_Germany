@@ -56,7 +56,7 @@ ALPHA          = 0.05     # significance level for Mann-Kendall
 MIN_VALID      = 10       # minimum valid years required for a trend estimate
 DPI            = 600      # output resolution
 MAP_EXTENT     = [5.8, 15.2, 47.4, 55.1]   # Germany [lon_min, lon_max, lat_min, lat_max]
-DISPLAY_FACTOR = 8        # bilinear upsampling factor for map display (visual only)
+DISPLAY_FACTOR = 5        # bilinear upsampling factor for map display (visual only)
 WET_DAY_MIN    = 1.0      # mm/day — wet-day threshold (R95p, R99p, SDII, CWD, R95pTOT)
 DRY_DAY_MAX    = 1.0      # mm/day — dry-day threshold (Dry_days, CDD)
 
@@ -697,9 +697,7 @@ def plot_paired_trend_maps(
         # discrimination where both datasets cluster close to 0).
         # Non-diverging maps use fewer bins for a cleaner sequential ramp.
         nbins = 10 if is_diverging else 8
-        # steps=[1,2,5,10] avoids 2.5 which would give 0.025 steps that look
-        # uneven when formatted to 2 d.p. (0.025 → "0.03", -0.075 → "-0.07")
-        loc   = MaxNLocator(nbins=nbins, steps=[1, 2, 5, 10],
+        loc   = MaxNLocator(nbins=nbins, steps=[1, 2, 2.5, 5, 10],
                             symmetric=is_diverging)
         nice  = loc.tick_values(lo, hi)
         margin = (hi - lo) * 0.08
@@ -747,9 +745,8 @@ def plot_paired_trend_maps(
         sig_mask   = pval.values < ALPHA
         n_total    = int(np.isfinite(pval.values).sum())
         sig_frac   = sig_mask.sum() / n_total * 100 if n_total > 0 else 0.0
-        if sig_frac <= 95.0:
-            ax.scatter(lo2d[sig_mask], la2d[sig_mask],
-                       s=2.0, c="#1a1a1a", alpha=0.40, marker=".", zorder=7, rasterized=True)
+        ax.scatter(lo2d[sig_mask], la2d[sig_mask],
+                   s=2.0, c="#1a1a1a", alpha=0.40, marker=".", zorder=7, rasterized=True)
 
         # Panel label
         ax.text(0.03, 0.97, panel_label, transform=ax.transAxes,
