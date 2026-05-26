@@ -41,16 +41,25 @@ os.makedirs(TABDIR, exist_ok=True)
 
 
 # ── colormap settings ─────────────────────────────────────────────────────────
-# IPCC AR6 WGI diverging palette (RdBu_r): white = 0, blue = cooling, red = warming.
-# TEMP_LEVELS extended to 0.60 °C/decade to resolve spatial variation
-# in both E-OBS (+0.15–+0.45) and ICON-CLM (+0.30–+0.60) warming rates.
+# Sequential red palette for temperature trends.
+# Germany JJA trends are all positive (warming); a diverging palette centred
+# on zero wastes the blue half and compresses all values into a narrow dark-red
+# band.  A sequential palette from near-white to deep red gives full
+# perceptual discrimination across the observed 0.0–0.60 °C/decade range.
 # Rule: len(LEVELS) = len(COLORS) + 1
-TEMP_LEVELS = [-0.60, -0.30, -0.20, -0.10,
-                0.00,
-                0.10,  0.20,  0.30,  0.40,  0.50,  0.55,  0.60]
+TEMP_LEVELS = [0.00, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.60]
 TEMP_COLORS = [
-    "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#f7f7f7",
-    "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#8c0d1c", "#67001f",
+    "#fff5f0",   # near-white  (0.00–0.05)
+    "#fee0d2",   # very pale   (0.05–0.10)
+    "#fcbba1",   # light pink  (0.10–0.15)
+    "#fc9272",   # light red   (0.15–0.20)
+    "#fb6a4a",   # medium-light(0.20–0.25)
+    "#ef3b2c",   # medium red  (0.25–0.30)
+    "#cb181d",   # strong red  (0.30–0.35)
+    "#a50f15",   # dark red    (0.35–0.40)
+    "#820808",   # darker red  (0.40–0.45)
+    "#67000d",   # very dark   (0.45–0.50)
+    "#3d0007",   # deepest red (0.50–0.60)
 ]
 
 PREC_LEVELS = [-0.30, -0.20, -0.15, -0.10, -0.05, 0, 0.05, 0.10, 0.15, 0.20, 0.30]

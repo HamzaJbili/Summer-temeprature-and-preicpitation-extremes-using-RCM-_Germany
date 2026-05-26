@@ -886,9 +886,16 @@ def plot_germany_series(
     ax2.bar(anom_yrs - bar_w / 2, obs_neg, bar_w,
             color="#4575b4", alpha=0.78, label="E-OBS −anom", zorder=2)
 
-    # ICON-CLM raw annual anomaly — same treatment as E-OBS, no smoothing
-    ax2.plot(anom_yrs, mod_a, "-", color=MOD_COL, lw=1.5,
-             label="ICON-CLM", zorder=4, alpha=0.85)
+    # 11-yr running means for both — smoothed decadal signal for direct comparison
+    s_obs_a  = pd.Series(obs_a, index=anom_yrs, dtype=float)
+    s_mod_a  = pd.Series(mod_a, index=anom_yrs, dtype=float)
+    rm11_obs = s_obs_a.rolling(11, center=True, min_periods=6).mean()
+    rm11_mod = s_mod_a.rolling(11, center=True, min_periods=6).mean()
+
+    ax2.plot(anom_yrs, rm11_obs.values, "-", color=OBS_COL, lw=2.0,
+             label="E-OBS 11-yr", zorder=5, alpha=0.90)
+    ax2.plot(anom_yrs, rm11_mod.values, "-", color=MOD_COL, lw=2.0,
+             label="ICON-CLM 11-yr", zorder=5, alpha=0.90)
 
     ylabel_anom = ylabel_anom or f"Anomaly [{ylabel}]"
     ax2.set_ylabel(ylabel_anom, fontsize=9)
