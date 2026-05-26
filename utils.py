@@ -37,13 +37,14 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.colorbar import ColorbarBase
 from matplotlib.path import Path
-from matplotlib.patches import PathPatch
 from matplotlib.ticker import FormatStrFormatter
 from scipy.stats import theilslopes
 import pymannkendall as mk
 import geopandas as gpd
 from shapely.ops import unary_union
 from shapely.geometry import Polygon, MultiPolygon
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
 
 # ── shared settings (imported by all scripts) ─────────────────────────────────
 START_YEAR     = "1950"
@@ -320,12 +321,6 @@ def apply_mask(arr2d, mask2d):
     return out
 
 
-def clip_contourf(cf_obj, ax, geom):
-    """Clip a filled-contour collection to the Germany boundary polygon."""
-    clip = PathPatch(_polygon_to_path(geom), transform=ax.transData, facecolor="none")
-    for coll in cf_obj.collections:
-        coll.set_clip_path(clip)
-
 
 def interp_display(da2d, factor=DISPLAY_FACTOR):
     """
@@ -382,12 +377,22 @@ def plot_climatology_maps(obs_clim, mod_clim, gdf, geom, outfile,
         "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f",
     ]
 
+    PC   = ccrs.PlateCarree()
+    PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
+
     cmap_seq  = mcolors.ListedColormap(colors)
     norm_seq  = mcolors.BoundaryNorm(levels, cmap_seq.N)
     cmap_div  = mcolors.ListedColormap(bias_col)
     norm_div  = mcolors.BoundaryNorm(bias_lvl, cmap_div.N)
 
-    fig, axes = plt.subplots(1, 3, figsize=(13.0, 4.4))
+    from matplotlib.gridspec import GridSpec
+    fig = plt.figure(figsize=(13.0, 5.2))
+    gs  = GridSpec(2, 3, height_ratios=[1, 0.07],
+                   left=0.04, right=0.98, top=0.92, bottom=0.04,
+                   hspace=0.10, wspace=0.15)
+    axes = [fig.add_subplot(gs[0, k], projection=PROJ) for k in range(3)]
+    caxs = [fig.add_subplot(gs[1, k]) for k in range(3)]
+
     fig.patch.set_facecolor("white")
     if suptitle:
         fig.suptitle(suptitle, fontsize=10, fontweight="bold", y=0.99)
@@ -395,40 +400,39 @@ def plot_climatology_maps(obs_clim, mod_clim, gdf, geom, outfile,
     panel_labels = ["(a)", "(b)", "(c)"]
     panel_titles = ["E-OBS", "ICON-CLM", "Bias (ICON − E-OBS)"]
 
-    for k, (ax, da, cmap, norm, lvls, title, plabel) in enumerate(zip(
-            axes,
+    for k, (ax, cax, da, cmap, norm, lvls, title, plabel) in enumerate(zip(
+            axes, caxs,
             [obs_clim, mod_clim, bias],
             [cmap_seq, cmap_seq, cmap_div],
             [norm_seq, norm_seq, norm_div],
             [levels,   levels,   bias_lvl],
             panel_titles, panel_labels,
     )):
+        ax.set_extent(MAP_EXTENT, crs=PC)
+        ax.set_facecolor("#d6e8f2")
+        ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
+
         fine = interp_display(da)
         mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
         arr  = apply_mask(fine.values, mask)
 
-        cf = ax.contourf(
+        ax.contourf(
             fine["lon"].values, fine["lat"].values, arr,
             levels=lvls, cmap=cmap, norm=norm,
-            extend="both", antialiased=True,
+            transform=PC, extend="both", antialiased=True, zorder=2,
         )
-        clip_contourf(cf, ax, geom)
-        gdf.boundary.plot(ax=ax, color="black", linewidth=0.55, zorder=5)
+        ax.add_geometries(gdf.geometry, PC, facecolor="none",
+                          edgecolor="black", linewidth=0.55, zorder=5)
         ax.text(0.03, 0.97, plabel, transform=ax.transAxes,
                 ha="left", va="top", fontsize=9, fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
         ax.set_title(title, fontsize=9.5, fontweight="bold", pad=4)
         style_axis(ax)
 
-        # Individual colorbar below each panel
-        plt.subplots_adjust(left=0.04, right=0.98, top=0.88,
-                            bottom=0.22, wspace=0.18)
-        pos  = ax.get_position()
-        cax  = fig.add_axes([pos.x0 + 0.01, 0.10, pos.width - 0.02, 0.040])
-        fmt  = tick_fmt if k < 2 else "%.2f"
+        fmt   = tick_fmt if k < 2 else "%.2f"
         ticks = [lvls[0], lvls[len(lvls)//2], lvls[-1]] if k == 2 else lvls
-        cb   = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
-                            ticks=ticks, orientation="horizontal", extend="both")
+        cb    = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
+                             ticks=ticks, orientation="horizontal", extend="both")
         cb.ax.tick_params(labelsize=6.5, pad=1.5)
         cb.ax.xaxis.set_major_formatter(FormatStrFormatter(fmt))
         if k == 1:
@@ -639,18 +643,16 @@ def annual_cwd(daily_jja, wet_min=WET_DAY_MIN):
 
 # ── map axis styling ──────────────────────────────────────────────────────────
 def style_axis(ax):
-    """Apply cartographic formatting to a map axis (Germany domain)."""
-    ax.set_facecolor("#d6e8f2")
-    ax.set_xlim(MAP_EXTENT[0], MAP_EXTENT[1])
-    ax.set_ylim(MAP_EXTENT[2], MAP_EXTENT[3])
-    ax.set_box_aspect(1)
-    ax.set_xticks(np.arange(6, 16, 3))
-    ax.set_yticks(np.arange(48, 56, 2))
-    ax.set_xticklabels([f"{v}°E" for v in np.arange(6, 16, 3)], fontsize=7)
-    ax.set_yticklabels([f"{v}°N" for v in np.arange(48, 56, 2)], fontsize=7)
-    ax.tick_params(axis="both", which="both", direction="out",
-                   top=False, right=False, pad=2)
-    ax.grid(True, linestyle=":", linewidth=0.35, color="0.55", alpha=0.55, zorder=0)
+    """Apply cartographic formatting to a Cartopy GeoAxes (Germany domain)."""
+    gl = ax.gridlines(
+        crs=ccrs.PlateCarree(), draw_labels=True,
+        linewidth=0.35, color="0.55", alpha=0.55, linestyle=":", zorder=0,
+        xlocs=np.arange(6, 16, 3), ylocs=np.arange(48, 56, 2),
+    )
+    gl.top_labels   = False
+    gl.right_labels = False
+    gl.xlabel_style = {"size": 7}
+    gl.ylabel_style = {"size": 7}
     for sp in ax.spines.values():
         sp.set_linewidth(0.65)
 
@@ -711,59 +713,67 @@ def plot_paired_trend_maps(
             colors = [colors[i] for i in idxs]
             levels = nice
 
+    PC   = ccrs.PlateCarree()
+    PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
+
     cmap = mcolors.ListedColormap(colors)
     norm = mcolors.BoundaryNorm(levels, cmap.N)
 
-    fig, axes = plt.subplots(1, 2, figsize=(10.5, 5.5))
+    fig = plt.figure(figsize=(10.5, 5.5))
     fig.patch.set_facecolor("white")
     if suptitle:
         fig.suptitle(suptitle, fontsize=11, fontweight="bold", y=0.99)
 
-    for ax, slope, pval, ds_title, panel_label in [
-        (axes[0], obs_slope,   obs_pval,   title_obs,   "(a)"),
-        (axes[1], model_slope, model_pval, title_model, "(b)"),
-    ]:
-        fine = interp_display(slope)
-        mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
-        arr  = apply_mask(fine.values, mask)
+    for i, (slope, pval, ds_title, panel_label) in enumerate([
+        (obs_slope,   obs_pval,   title_obs,   "(a)"),
+        (model_slope, model_pval, title_model, "(b)"),
+    ]):
+        ax = fig.add_subplot(1, 2, i + 1, projection=PROJ)
+        ax.set_extent(MAP_EXTENT, crs=PC)
+        ax.set_facecolor("#d6e8f2")
+        ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
 
-        cf = ax.contourf(
+        fine    = interp_display(slope)
+        de_mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
+        arr     = apply_mask(fine.values, de_mask)
+
+        ax.contourf(
             fine["lon"].values, fine["lat"].values, arr,
             levels=levels, cmap=cmap, norm=norm,
-            extend="both", antialiased=True,
+            transform=PC, extend="both", antialiased=True, zorder=2,
         )
-        clip_contourf(cf, ax, geom)
 
-        # White halo + dark border for clean visual separation
-        gdf.boundary.plot(ax=ax, color="white",   linewidth=1.8, zorder=5)
-        gdf.boundary.plot(ax=ax, color="#1a1a1a", linewidth=0.70, zorder=6)
+        # White halo + dark border
+        ax.add_geometries(gdf.geometry, PC, facecolor="none",
+                          edgecolor="white",   linewidth=1.8, zorder=5)
+        ax.add_geometries(gdf.geometry, PC, facecolor="none",
+                          edgecolor="#1a1a1a", linewidth=0.70, zorder=6)
 
-        # Stippling on coarse grid where p < ALPHA
-        lo2d, la2d  = np.meshgrid(slope["lon"].values, slope["lat"].values)
-        de_mask     = build_mask(slope["lon"].values, slope["lat"].values, geom)
-        sig_mask    = pval.values < ALPHA
-        n_de        = int(de_mask.sum())
-        sig_frac    = (sig_mask & de_mask).sum() / n_de * 100 if n_de > 0 else 0.0
-        ax.scatter(lo2d[sig_mask], la2d[sig_mask],
-                   s=2.0, c="#1a1a1a", alpha=0.40, marker=".", zorder=7, rasterized=True)
+        # Stippling — Germany cells only
+        de_mask_c  = build_mask(slope["lon"].values, slope["lat"].values, geom)
+        sig_mask   = pval.values < ALPHA
+        lo2d, la2d = np.meshgrid(slope["lon"].values, slope["lat"].values)
+        stip_mask  = sig_mask & de_mask_c
+        ax.scatter(lo2d[stip_mask], la2d[stip_mask],
+                   s=2.0, c="#1a1a1a", alpha=0.40, marker=".", zorder=7,
+                   rasterized=True, transform=PC)
 
-        # Panel label
+        n_de     = int(de_mask_c.sum())
+        sig_frac = stip_mask.sum() / n_de * 100 if n_de > 0 else 0.0
+
         ax.text(0.03, 0.97, panel_label, transform=ax.transAxes,
                 ha="left", va="top", fontsize=11, fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.22", fc="white",
                           ec="#888888", alpha=0.92, lw=0.6))
-
         ax.set_title(ds_title, fontsize=11, fontweight="bold", pad=6)
 
-        # Significance fraction — bottom-right
         ax.text(0.97, 0.03, f"Sig. area: {sig_frac:.0f}%",
                 transform=ax.transAxes, ha="right", va="bottom",
                 fontsize=7.5, color="#222222",
                 bbox=dict(boxstyle="round,pad=0.20", fc="white",
                           ec="#aaaaaa", alpha=0.92, lw=0.5))
 
-        # Domain-mean trend — bottom-left
-        mean_v = float(np.nanmean(slope.values))
+        mean_v = float(np.nanmean(slope.values[de_mask_c]))
         sign   = "+" if mean_v >= 0 else ""
         ax.text(0.03, 0.03, f"Mean: {sign}{mean_v:.3f}",
                 transform=ax.transAxes, ha="left", va="bottom",
@@ -775,7 +785,6 @@ def plot_paired_trend_maps(
 
     plt.subplots_adjust(left=0.04, right=0.97, top=0.88, bottom=0.20, wspace=0.10)
 
-    # ── Colorbar — ticks = levels so labels sit exactly at colour edges ───────
     cax = fig.add_axes([0.12, 0.08, 0.76, 0.045])
     cb  = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=levels,
                        ticks=levels, orientation="horizontal", extend="both")
@@ -923,8 +932,12 @@ def plot_precipitation_overview(index_meta, gdf, geom, outfile):
     geom : Shapely geometry — for contour clipping.
     outfile : str
     """
+    PC   = ccrs.PlateCarree()
+    PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
+
     n    = len(index_meta)
-    fig, axes = plt.subplots(n, 2, figsize=(8.8, n * 2.8))
+    fig, axes = plt.subplots(n, 2, figsize=(8.8, n * 2.8),
+                              subplot_kw={"projection": PROJ})
     fig.patch.set_facecolor("white")
     fig.suptitle(
         "JJA Precipitation Extreme Indices — Theil-Sen Trends 1950–2022\n"
@@ -932,7 +945,7 @@ def plot_precipitation_overview(index_meta, gdf, geom, outfile):
         fontsize=9.5, fontweight="bold", y=0.998,
     )
 
-    letters = "abcdefghijklmnopqrstuvwxyz"
+    letters    = "abcdefghijklmnopqrstuvwxyz"
     letter_idx = 0
 
     for row, (name, d) in enumerate(index_meta.items()):
@@ -944,27 +957,31 @@ def plot_precipitation_overview(index_meta, gdf, geom, outfile):
             (d["mod_slope"], d["mod_pval"], "ICON-CLM"),
         ]):
             ax = axes[row, col] if n > 1 else axes[col]
+            ax.set_extent(MAP_EXTENT, crs=PC)
+            ax.set_facecolor("#d6e8f2")
+            ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
 
             fine = interp_display(slope)
             mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
             arr  = apply_mask(fine.values, mask)
 
-            cf = ax.contourf(
+            ax.contourf(
                 fine["lon"].values, fine["lat"].values, arr,
                 levels=d["levels"], cmap=cmap, norm=norm,
-                extend="both", antialiased=True,
+                transform=PC, extend="both", antialiased=True, zorder=2,
             )
-            clip_contourf(cf, ax, geom)
-            gdf.boundary.plot(ax=ax, color="black", linewidth=0.50, zorder=5)
+            ax.add_geometries(gdf.geometry, PC, facecolor="none",
+                              edgecolor="black", linewidth=0.50, zorder=5)
 
-            # Stippling on original grid where p < ALPHA
-            lo2d, la2d = np.meshgrid(slope["lon"].values, slope["lat"].values)
+            # Stippling — Germany cells only
+            de_mask_c  = build_mask(slope["lon"].values, slope["lat"].values, geom)
             sig_mask   = pval.values < ALPHA
-            ax.scatter(lo2d[sig_mask], la2d[sig_mask],
-                       s=0.35, c="#111111", alpha=0.26,
-                       zorder=6, rasterized=True)
+            lo2d, la2d = np.meshgrid(slope["lon"].values, slope["lat"].values)
+            stip_mask  = sig_mask & de_mask_c
+            ax.scatter(lo2d[stip_mask], la2d[stip_mask],
+                       s=0.35, c="#111111", alpha=0.26, zorder=6,
+                       rasterized=True, transform=PC)
 
-            # Panel letter label
             ax.text(0.03, 0.97, f"({letters[letter_idx]})",
                     transform=ax.transAxes, ha="left", va="top",
                     fontsize=8, fontweight="bold",
@@ -972,17 +989,15 @@ def plot_precipitation_overview(index_meta, gdf, geom, outfile):
                               ec="none", alpha=0.72))
             letter_idx += 1
 
-            # Column title (top row only)
             if row == 0:
                 ax.set_title(ds_title, fontsize=9, fontweight="bold", pad=3)
 
-            # Row label on left column only
             if col == 0:
-                ax.set_ylabel(d["long_name"], fontsize=7.5, labelpad=2)
+                ax.text(-0.12, 0.5, d["long_name"], transform=ax.transAxes,
+                        fontsize=7.5, va="center", ha="right", rotation=90)
 
             style_axis(ax)
 
-            # Vertical colorbar attached to the right panel of each row
             if col == 1:
                 cb_ax = ax.inset_axes([1.05, 0.0, 0.07, 1.0])
                 cb = ColorbarBase(
@@ -995,7 +1010,7 @@ def plot_precipitation_overview(index_meta, gdf, geom, outfile):
                 cb.set_label(d["cbar_label"], fontsize=6, labelpad=3)
 
     plt.subplots_adjust(
-        left=0.10, right=0.88, top=0.97, bottom=0.01,
+        left=0.12, right=0.88, top=0.97, bottom=0.01,
         hspace=0.07, wspace=0.12,
     )
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
