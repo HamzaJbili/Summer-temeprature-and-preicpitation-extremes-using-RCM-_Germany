@@ -849,8 +849,8 @@ def plot_obs_bias_maps(
             return list(base_levels), list(base_colors), cmap, norm
         p2, p98  = np.percentile(valid, 2), np.percentile(valid, 98)
         med_val  = float(np.median(valid))
-        # obs_panel is always sequential; diff panel auto-detects diverging
-        is_div   = (not obs_panel) and (p2 < 0 < p98)
+        # Diff panel: diverging whenever the base palette is diverging (obs_panel never diverges)
+        is_div   = (not obs_panel) and base_is_div
         n_target = 14 if is_div else 12
         if is_div:
             ext    = max(abs(p2), abs(p98))
