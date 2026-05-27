@@ -835,8 +835,12 @@ def plot_obs_bias_maps(
 
     obs_colors_orig = list(obs_colors)
 
-    def _auto_scale(data_arr, base_colors, base_levels):
-        """Auto-scale levels and resample base_colors to data range."""
+    def _auto_scale(data_arr, base_colors, base_levels, obs_panel=False):
+        """Auto-scale levels and resample base_colors to data range.
+
+        obs_panel=True forces sequential (never diverging) so the E-OBS
+        panel always shows only the dominant-sign half of the palette.
+        """
         valid       = data_arr[np.isfinite(data_arr)]
         base_is_div = min(base_levels) < 0 < max(base_levels)
         if len(valid) <= 10:
@@ -844,7 +848,9 @@ def plot_obs_bias_maps(
             norm = mcolors.BoundaryNorm(base_levels, cmap.N)
             return list(base_levels), list(base_colors), cmap, norm
         p2, p98  = np.percentile(valid, 2), np.percentile(valid, 98)
-        is_div   = p2 < 0 < p98
+        med_val  = float(np.median(valid))
+        # obs_panel is always sequential; diff panel auto-detects diverging
+        is_div   = (not obs_panel) and (p2 < 0 < p98)
         n_target = 10 if is_div else 12
         if is_div:
             ext    = max(abs(p2), abs(p98))
@@ -852,8 +858,8 @@ def plot_obs_bias_maps(
         else:
             lo = np.percentile(valid, 5)
             hi = np.percentile(valid, 95)
-            # All-negative from diverging template: add one step above 0
-            if base_is_div and hi < 0:
+            # Negative-dominant: extend one step above 0 so colorbar doesn't stop abruptly
+            if base_is_div and med_val < 0:
                 rough_mag = 10.0 ** np.floor(np.log10(abs(lo) / n_target))
                 step0     = min([f * rough_mag for f in [1, 2, 5, 10]],
                                 key=lambda s: abs(abs(lo) / s - n_target))
@@ -869,16 +875,16 @@ def plot_obs_bias_maps(
         else:
             start  = np.floor(lo / step) * step
             nice   = np.round(np.arange(start, hi + step * 0.01, step), 10).tolist()
-            if lo > 0:  # all-positive: strip any spurious zero
+            if lo > 0:
                 nice = [t for t in nice if t > 0]
         margin = span * 0.08
         nice   = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
         if len(nice) >= 3:
             n_new  = len(nice) - 1
             if base_is_div and not is_div:
-                # Include neutral centre so 0 maps to white, not extreme colour
                 center = len(base_colors) // 2
-                sub    = base_colors[:center + 1] if p98 <= 0 else base_colors[center + 1:]
+                # Use negative half (brown) when data is negative-dominant, positive half otherwise
+                sub    = base_colors[:center + 1] if med_val < 0 else base_colors[center + 1:]
                 idxs   = np.round(np.linspace(0, len(sub) - 1, n_new)).astype(int)
                 colors = [sub[i] for i in idxs]
             else:
@@ -896,7 +902,7 @@ def plot_obs_bias_maps(
 
     # Both panels use the same base palette, independently auto-scaled
     obs_lvls,  _, cmap_obs,  norm_obs  = _auto_scale(
-        obs_slope.values, obs_colors_orig, obs_levels)
+        obs_slope.values, obs_colors_orig, obs_levels, obs_panel=True)
     diff_lvls, _, cmap_diff, norm_diff = _auto_scale(
         diff.values, obs_colors_orig, obs_levels)
 
