@@ -891,16 +891,15 @@ def plot_obs_bias_maps(
 
     # ── Figure layout — two map columns with a gap, colorbars via inset_axes ──
     from matplotlib.gridspec import GridSpec
-    fig = plt.figure(figsize=(11.0, 5.8))
+    fig = plt.figure(figsize=(10.5, 5.2))
     fig.patch.set_facecolor("white")
     if suptitle:
         fig.suptitle(suptitle, fontsize=11, fontweight="bold", y=0.99)
 
     # Simple 3-column GridSpec: map_a | gap | map_b
-    # Colorbars are attached directly to each map via ax.inset_axes so they
-    # are always the exact same height as the rendered map axes.
-    gs  = GridSpec(1, 3, width_ratios=[1, 0.10, 1],
-                   left=0.04, right=0.91, top=0.91, bottom=0.05,
+    # Colorbars attach via ax.inset_axes — no colorbar columns needed.
+    gs  = GridSpec(1, 3, width_ratios=[1, 0.08, 1],
+                   left=0.03, right=0.93, top=0.91, bottom=0.04,
                    wspace=0.0)
     axs = [fig.add_subplot(gs[0, 0], projection=PROJ),
            fig.add_subplot(gs[0, 2], projection=PROJ)]
@@ -975,26 +974,22 @@ def plot_obs_bias_maps(
 
         style_axis(ax)
 
-        # ── Colorbar — inset_axes ensures exact same height as the map axes ──
-        # [x0, y0, width, height] in axes-fraction coordinates.
-        # x0=1.02 places it just outside the right edge; height=1.0 matches map.
-        cax = ax.inset_axes([1.02, 0.0, 0.06, 1.0])
+        # ── Colorbar — slim vertical bar, exact same height as map axes ────────
+        # width=0.035 keeps it thin; x0=1.015 leaves a 1.5% gap from map edge
+        cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
 
-        # Compute clean, sparse display ticks (separate from the dense boundaries
-        # used for colour rendering).  steps=[1,2,5,10] avoids "2.5" multiples
-        # that produce messy values like 0.025, 0.075.
-        is_div  = min(lvls) < 0 < max(lvls)
-        tloc    = MaxNLocator(nbins=6, steps=[1, 2, 5, 10], symmetric=is_div)
-        traw    = tloc.tick_values(min(lvls), max(lvls))
-        ticks   = [t for t in traw if min(lvls) <= t <= max(lvls)]
+        is_div = min(lvls) < 0 < max(lvls)
+        tloc   = MaxNLocator(nbins=6, steps=[1, 2, 5, 10], symmetric=is_div)
+        traw   = tloc.tick_values(min(lvls), max(lvls))
+        ticks  = [t for t in traw if min(lvls) <= t <= max(lvls)]
 
         cb = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
                           ticks=ticks, orientation="vertical", extend="both")
-        cb.ax.tick_params(labelsize=7.5, pad=3, length=3.5, width=0.6,
+        cb.ax.tick_params(labelsize=7, pad=2, length=3, width=0.5,
                           direction="out")
         cb.ax.yaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
-        cb.outline.set_linewidth(0.7)
-        cb.set_label(p["cbar_lbl"], fontsize=8.5, labelpad=6)
+        cb.outline.set_linewidth(0.5)
+        cb.set_label(p["cbar_lbl"], fontsize=8, labelpad=4)
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
