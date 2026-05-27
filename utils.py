@@ -790,9 +790,17 @@ def plot_paired_trend_maps(
     plt.subplots_adjust(left=0.04, right=0.97, top=0.88, bottom=0.20, wspace=0.10)
 
     cax = fig.add_axes([0.12, 0.08, 0.76, 0.045])
+
+    from matplotlib.ticker import MaxNLocator as _MNL
+    _is_div = min(levels) < 0 < max(levels)
+    _tloc   = _MNL(nbins=6, steps=[1, 2, 5, 10], symmetric=_is_div)
+    _eps    = (max(levels) - min(levels)) * 1e-6
+    _ticks  = [t for t in _tloc.tick_values(min(levels), max(levels))
+               if min(levels) - _eps <= t <= max(levels) + _eps]
+
     cb  = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=levels,
-                       ticks=levels, orientation="horizontal", extend="both")
-    cb.ax.tick_params(labelsize=9, pad=2.5)
+                       ticks=_ticks, orientation="horizontal", extend="both")
+    cb.ax.tick_params(labelsize=8.5, pad=2.5)
     cb.ax.xaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
     cb.set_label(cbar_label, fontsize=9, labelpad=4, fontweight="normal")
 
@@ -1034,6 +1042,8 @@ def plot_germany_series(
     mod_a    = model_anom.values.astype(float)
 
     ax2.axvspan(1991, 2020, color="#f0f0f0", zorder=0)
+    ax2.text(2005.5, 0, "1991–2020\nreference", ha="center", va="bottom",
+             fontsize=6.5, color="0.55", style="italic", zorder=1)
     ax2.axhline(0, color="0.35", lw=0.80, zorder=1)
 
     # E-OBS sign-coloured bars
