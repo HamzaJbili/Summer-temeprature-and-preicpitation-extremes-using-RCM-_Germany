@@ -829,20 +829,33 @@ def plot_obs_bias_maps(
             norm = mcolors.BoundaryNorm(base_levels, cmap.N)
             return list(base_levels), list(base_colors), cmap, norm
         p2, p98 = np.percentile(valid, 2), np.percentile(valid, 98)
-        is_div  = p2 < 0 < p98          # actual data range: diverging only when spans ±
-        lo, hi  = ((-max(abs(p2), abs(p98)), max(abs(p2), abs(p98)))
-                   if is_div else (p2, p98))
-        nbins   = 10 if is_div else 12  # more bins for sequential → finer colour steps
-        loc     = MaxNLocator(nbins=nbins, steps=[1, 2, 5, 10], symmetric=is_div)
-        nice    = loc.tick_values(lo, hi)
-        margin  = (hi - lo) * 0.08
-        nice    = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
+        is_div  = p2 < 0 < p98
+        if is_div:
+            ext    = max(abs(p2), abs(p98))
+            lo, hi = -ext, ext
+        else:
+            # p5–p95: tighter range reduces washed-out extremes
+            lo, hi = np.percentile(valid, 5), np.percentile(valid, 95)
+        # Deterministic step: target 10 (div) or 12 (seq) intervals
+        n_target = 10 if is_div else 12
+        span     = hi - lo
+        raw_step = span / n_target
+        mag      = 10.0 ** np.floor(np.log10(raw_step))
+        step     = next(f * mag for f in [1, 2, 5, 10] if f * mag >= raw_step)
+        if is_div:
+            n_half = max(1, round(hi / step))
+            nice   = [round(i * step, 10) for i in range(-n_half, n_half + 1)]
+        else:
+            start = np.floor(lo / step) * step
+            nice  = np.round(np.arange(start, hi + step * 0.01, step), 10).tolist()
+        margin = span * 0.08
+        nice   = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
         if len(nice) >= 3:
-            n_new = len(nice) - 1
+            n_new  = len(nice) - 1
             if base_is_div and not is_div:
-                # One-sided data from a diverging palette: sample only relevant half
+                # Exclude neutral centre colour to avoid washed-out white areas
                 center = len(base_colors) // 2
-                sub    = base_colors[center:] if p98 > 0 else base_colors[:center + 1]
+                sub    = base_colors[:center] if p98 <= 0 else base_colors[center + 1:]
                 idxs   = np.round(np.linspace(0, len(sub) - 1, n_new)).astype(int)
                 colors = [sub[i] for i in idxs]
             else:
