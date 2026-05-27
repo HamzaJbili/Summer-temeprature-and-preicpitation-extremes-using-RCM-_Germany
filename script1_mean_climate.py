@@ -80,7 +80,8 @@ def _to_annual(da):
 # ── processing helper ─────────────────────────────────────────────────────────
 def process_mean_index(name, annual_model, annual_obs, unit,
                        trend_unit, levels, colors, tick_fmt,
-                       gdf, geom, rows):
+                       gdf, geom, rows,
+                       obs_sequential=True, diff_colors=None, diff_levels=None):
     """
     Full pipeline for one mean-climate variable:
     anomalies, trend maps, Germany-average plots, summary stats.
@@ -117,6 +118,8 @@ def process_mean_index(name, annual_model, annual_obs, unit,
         outfile     = os.path.join(FIGDIR, f"{name}_obs_bias_map.png"),
         obs_levels=levels, obs_colors=colors,
         cbar_label  = trend_unit, tick_fmt=tick_fmt,
+        obs_sequential=obs_sequential,
+        diff_colors=diff_colors, diff_levels=diff_levels,
     )
 
     # Germany-average series
@@ -223,6 +226,8 @@ if __name__ == "__main__":
         colors=PREC_COLORS,
         tick_fmt="%.2f",
         gdf=gdf, geom=geom, rows=rows,
+        obs_sequential=False,
+        diff_colors=TEMP_COLORS, diff_levels=TEMP_LEVELS,
     )
 
     pd.DataFrame(rows).to_csv(
