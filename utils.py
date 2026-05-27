@@ -680,12 +680,13 @@ def plot_paired_trend_maps(
     from matplotlib.gridspec import GridSpec
 
     # ── Auto-scale levels to p2–p98 of combined data ─────────────────────────
-    combined     = np.concatenate([obs_slope.values.ravel(), model_slope.values.ravel()])
-    valid        = combined[np.isfinite(combined)]
-    is_diverging = min(levels) < 0 < max(levels)
+    combined    = np.concatenate([obs_slope.values.ravel(), model_slope.values.ravel()])
+    valid       = combined[np.isfinite(combined)]
+    base_is_div = min(levels) < 0 < max(levels)
 
     if len(valid) > 10:
-        p2, p98 = np.percentile(valid, 2), np.percentile(valid, 98)
+        p2, p98      = np.percentile(valid, 2), np.percentile(valid, 98)
+        is_diverging = p2 < 0 < p98      # actual data range, not template
         lo, hi  = ((-max(abs(p2), abs(p98)), max(abs(p2), abs(p98)))
                    if is_diverging else (p2, p98))
         nbins   = 10 if is_diverging else 8
@@ -695,9 +696,15 @@ def plot_paired_trend_maps(
         margin  = (hi - lo) * 0.08
         nice    = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
         if len(nice) >= 3:
-            n_new  = len(nice) - 1
-            idxs   = np.round(np.linspace(0, len(colors) - 1, n_new)).astype(int)
-            colors = [colors[i] for i in idxs]
+            n_new = len(nice) - 1
+            if base_is_div and not is_diverging:
+                center = len(colors) // 2
+                sub    = colors[center:] if p98 > 0 else colors[:center + 1]
+                idxs   = np.round(np.linspace(0, len(sub) - 1, n_new)).astype(int)
+                colors = [sub[i] for i in idxs]
+            else:
+                idxs   = np.round(np.linspace(0, len(colors) - 1, n_new)).astype(int)
+                colors = [colors[i] for i in idxs]
             levels = nice
 
     PC   = ccrs.PlateCarree()
@@ -815,13 +822,14 @@ def plot_obs_bias_maps(
 
     def _auto_scale(data_arr, base_colors, base_levels):
         """Auto-scale levels and resample base_colors to data range."""
-        valid  = data_arr[np.isfinite(data_arr)]
-        is_div = min(base_levels) < 0 < max(base_levels)
+        valid       = data_arr[np.isfinite(data_arr)]
+        base_is_div = min(base_levels) < 0 < max(base_levels)
         if len(valid) <= 10:
             cmap = mcolors.ListedColormap(base_colors)
             norm = mcolors.BoundaryNorm(base_levels, cmap.N)
             return list(base_levels), list(base_colors), cmap, norm
         p2, p98 = np.percentile(valid, 2), np.percentile(valid, 98)
+        is_div  = p2 < 0 < p98          # actual data range, not template
         lo, hi  = ((-max(abs(p2), abs(p98)), max(abs(p2), abs(p98)))
                    if is_div else (p2, p98))
         nbins   = 10 if is_div else 8
@@ -830,9 +838,16 @@ def plot_obs_bias_maps(
         margin  = (hi - lo) * 0.08
         nice    = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
         if len(nice) >= 3:
-            n_new  = len(nice) - 1
-            idxs   = np.round(np.linspace(0, len(base_colors) - 1, n_new)).astype(int)
-            colors = [base_colors[i] for i in idxs]
+            n_new = len(nice) - 1
+            if base_is_div and not is_div:
+                # One-sided data from a diverging palette: sample only relevant half
+                center = len(base_colors) // 2
+                sub    = base_colors[center:] if p98 > 0 else base_colors[:center + 1]
+                idxs   = np.round(np.linspace(0, len(sub) - 1, n_new)).astype(int)
+                colors = [sub[i] for i in idxs]
+            else:
+                idxs   = np.round(np.linspace(0, len(base_colors) - 1, n_new)).astype(int)
+                colors = [base_colors[i] for i in idxs]
             levels = nice
         else:
             colors = list(base_colors)
