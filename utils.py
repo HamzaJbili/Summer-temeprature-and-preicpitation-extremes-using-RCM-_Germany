@@ -686,7 +686,7 @@ def plot_paired_trend_maps(
 
     if len(valid) > 10:
         p2, p98      = np.percentile(valid, 2), np.percentile(valid, 98)
-        is_diverging = p2 < 0 < p98      # actual data range, not template
+        is_diverging = base_is_div and p2 < 0   # diverging when template is and data has negatives
         lo, hi  = ((-max(abs(p2), abs(p98)), max(abs(p2), abs(p98)))
                    if is_diverging else (p2, p98))
         nbins   = 10 if is_diverging else 8
@@ -829,10 +829,10 @@ def plot_obs_bias_maps(
             norm = mcolors.BoundaryNorm(base_levels, cmap.N)
             return list(base_levels), list(base_colors), cmap, norm
         p2, p98 = np.percentile(valid, 2), np.percentile(valid, 98)
-        is_div  = p2 < 0 < p98          # actual data range, not template
+        is_div  = p2 < 0 < p98          # actual data range: diverging only when spans ±
         lo, hi  = ((-max(abs(p2), abs(p98)), max(abs(p2), abs(p98)))
                    if is_div else (p2, p98))
-        nbins   = 10 if is_div else 8
+        nbins   = 10 if is_div else 12  # more bins for sequential → finer colour steps
         loc     = MaxNLocator(nbins=nbins, steps=[1, 2, 5, 10], symmetric=is_div)
         nice    = loc.tick_values(lo, hi)
         margin  = (hi - lo) * 0.08
@@ -950,8 +950,9 @@ def plot_obs_bias_maps(
         # Slim vertical colorbar — rectangular ends, all boundary ticks labeled
         cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
 
+        cbar_ticks = lvls[::2] if len(lvls) > 8 else lvls
         cb = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
-                          ticks=lvls, orientation="vertical", extend="neither")
+                          ticks=cbar_ticks, orientation="vertical", extend="neither")
         cb.ax.tick_params(labelsize=7, pad=2, length=3, width=0.5, direction="out")
         cb.ax.yaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
         cb.outline.set_linewidth(0.5)
