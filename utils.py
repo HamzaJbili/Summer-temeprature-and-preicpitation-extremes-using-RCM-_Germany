@@ -673,43 +673,28 @@ def plot_paired_trend_maps(
     """
     Publication-quality two-panel trend map: (a) E-OBS, (b) ICON-CLM.
 
-    - Colorbar auto-scaled to p2–p98 of combined obs+model data so the full
-      colour range is used regardless of the hardcoded level boundaries.
-    - Significance fraction and domain-mean trend annotated per panel.
-    - White halo on Germany border for visual separation from ocean fill.
-    - Stippling (MK p < 0.05) and note below colorbar.
+    Each panel has its own slim vertical colorbar (same scale, all boundary
+    ticks labeled).  Significance stippling and domain-mean annotated per panel.
     """
-    # ── Auto-scale levels to actual combined data range ───────────────────────
+    from matplotlib.ticker import MaxNLocator
+    from matplotlib.gridspec import GridSpec
+
+    # ── Auto-scale levels to p2–p98 of combined data ─────────────────────────
     combined     = np.concatenate([obs_slope.values.ravel(), model_slope.values.ravel()])
     valid        = combined[np.isfinite(combined)]
     is_diverging = min(levels) < 0 < max(levels)
 
     if len(valid) > 10:
-        from matplotlib.ticker import MaxNLocator
         p2, p98 = np.percentile(valid, 2), np.percentile(valid, 98)
-
-        if is_diverging:
-            vmax = max(abs(p2), abs(p98))
-            lo, hi = -vmax, vmax
-        else:
-            lo, hi = p2, p98
-
-        # Derive clean round levels with MaxNLocator — these become BOTH the
-        # BoundaryNorm boundaries AND the colorbar ticks so they are always
-        # perfectly aligned (tick marks sit exactly at colour edges).
-        # Diverging maps get more bins (finer steps near zero give better
-        # discrimination where both datasets cluster close to 0).
-        # Non-diverging maps use fewer bins for a cleaner sequential ramp.
-        nbins = 10 if is_diverging else 8
-        loc   = MaxNLocator(nbins=nbins, steps=[1, 2, 2.5, 5, 10],
-                            symmetric=is_diverging)
-        nice  = loc.tick_values(lo, hi)
-        margin = (hi - lo) * 0.08
-        nice  = [float(t) for t in nice
-                 if (lo - margin) <= t <= (hi + margin)]
-
+        lo, hi  = ((-max(abs(p2), abs(p98)), max(abs(p2), abs(p98)))
+                   if is_diverging else (p2, p98))
+        nbins   = 10 if is_diverging else 8
+        loc     = MaxNLocator(nbins=nbins, steps=[1, 2, 5, 10],
+                              symmetric=is_diverging)
+        nice    = loc.tick_values(lo, hi)
+        margin  = (hi - lo) * 0.08
+        nice    = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
         if len(nice) >= 3:
-            # Resample the colour list to match the new number of intervals
             n_new  = len(nice) - 1
             idxs   = np.round(np.linspace(0, len(colors) - 1, n_new)).astype(int)
             colors = [colors[i] for i in idxs]
@@ -721,16 +706,21 @@ def plot_paired_trend_maps(
     cmap = mcolors.ListedColormap(colors)
     norm = mcolors.BoundaryNorm(levels, cmap.N)
 
+    # GridSpec: map_a | gap | map_b  (colorbars via inset_axes)
     fig = plt.figure(figsize=(10.5, 5.5))
     fig.patch.set_facecolor("white")
     if suptitle:
         fig.suptitle(suptitle, fontsize=11, fontweight="bold", y=0.99)
 
+    gs = GridSpec(1, 3, width_ratios=[1, 0.08, 1],
+                  left=0.03, right=0.93, top=0.91, bottom=0.04,
+                  wspace=0.0)
+
     for i, (slope, pval, ds_title, panel_label) in enumerate([
         (obs_slope,   obs_pval,   title_obs,   "(a)"),
         (model_slope, model_pval, title_model, "(b)"),
     ]):
-        ax = fig.add_subplot(1, 2, i + 1, projection=PROJ)
+        ax = fig.add_subplot(gs[0, 0 if i == 0 else 2], projection=PROJ)
         ax.set_extent(MAP_EXTENT, crs=PC)
         ax.set_facecolor("#d6e8f2")
         ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
@@ -746,14 +736,11 @@ def plot_paired_trend_maps(
             levels=levels, cmap=cmap, norm=norm,
             transform=PC, extend="both", antialiased=True, zorder=3,
         )
-
-        # White halo + dark border
         ax.add_geometries(gdf.geometry, PC, facecolor="none",
                           edgecolor="white",   linewidth=1.8, zorder=5)
         ax.add_geometries(gdf.geometry, PC, facecolor="none",
                           edgecolor="#1a1a1a", linewidth=0.70, zorder=6)
 
-        # Stippling — Germany cells only
         de_mask_c  = build_mask(slope["lon"].values, slope["lat"].values, geom)
         sig_mask   = pval.values < ALPHA
         lo2d, la2d = np.meshgrid(slope["lon"].values, slope["lat"].values)
@@ -787,22 +774,14 @@ def plot_paired_trend_maps(
 
         style_axis(ax)
 
-    plt.subplots_adjust(left=0.04, right=0.97, top=0.88, bottom=0.20, wspace=0.10)
-
-    cax = fig.add_axes([0.12, 0.08, 0.76, 0.045])
-
-    from matplotlib.ticker import MaxNLocator as _MNL
-    _is_div = min(levels) < 0 < max(levels)
-    _tloc   = _MNL(nbins=6, steps=[1, 2, 5, 10], symmetric=_is_div)
-    _eps    = (max(levels) - min(levels)) * 1e-6
-    _ticks  = [t for t in _tloc.tick_values(min(levels), max(levels))
-               if min(levels) - _eps <= t <= max(levels) + _eps]
-
-    cb  = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=levels,
-                       ticks=_ticks, orientation="horizontal", extend="both")
-    cb.ax.tick_params(labelsize=8.5, pad=2.5)
-    cb.ax.xaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
-    cb.set_label(cbar_label, fontsize=9, labelpad=4, fontweight="normal")
+        # Slim vertical colorbar — all boundary ticks labeled, rectangular ends
+        cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
+        cb  = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=levels,
+                           ticks=levels, orientation="vertical", extend="neither")
+        cb.ax.tick_params(labelsize=7, pad=2, length=3, width=0.5, direction="out")
+        cb.ax.yaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
+        cb.outline.set_linewidth(0.5)
+        cb.set_label(cbar_label, fontsize=8, labelpad=4, fontweight="normal")
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
@@ -846,7 +825,7 @@ def plot_obs_bias_maps(
         lo, hi  = ((-max(abs(p2), abs(p98)), max(abs(p2), abs(p98)))
                    if is_div else (p2, p98))
         nbins   = 10 if is_div else 8
-        loc     = MaxNLocator(nbins=nbins, steps=[1, 2, 2.5, 5, 10], symmetric=is_div)
+        loc     = MaxNLocator(nbins=nbins, steps=[1, 2, 5, 10], symmetric=is_div)
         nice    = loc.tick_values(lo, hi)
         margin  = (hi - lo) * 0.08
         nice    = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
@@ -953,18 +932,11 @@ def plot_obs_bias_maps(
 
         style_axis(ax)
 
-        # Slim vertical colorbar — rectangular ends (extend="neither"),
-        # clean sparse ticks with float-safe tolerance filter
+        # Slim vertical colorbar — rectangular ends, all boundary ticks labeled
         cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
 
-        is_div = min(lvls) < 0 < max(lvls)
-        tloc   = MaxNLocator(nbins=6, steps=[1, 2, 5, 10], symmetric=is_div)
-        traw   = tloc.tick_values(min(lvls), max(lvls))
-        eps    = (max(lvls) - min(lvls)) * 1e-6
-        ticks  = [t for t in traw if min(lvls) - eps <= t <= max(lvls) + eps]
-
         cb = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
-                          ticks=ticks, orientation="vertical", extend="neither")
+                          ticks=lvls, orientation="vertical", extend="neither")
         cb.ax.tick_params(labelsize=7, pad=2, length=3, width=0.5, direction="out")
         cb.ax.yaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
         cb.outline.set_linewidth(0.5)
