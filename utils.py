@@ -851,7 +851,7 @@ def plot_obs_bias_maps(
         med_val  = float(np.median(valid))
         # obs_panel is always sequential; diff panel auto-detects diverging
         is_div   = (not obs_panel) and (p2 < 0 < p98)
-        n_target = 10 if is_div else 12
+        n_target = 14 if is_div else 12
         if is_div:
             ext    = max(abs(p2), abs(p98))
             lo, hi = -ext, ext
@@ -883,8 +883,9 @@ def plot_obs_bias_maps(
             n_new  = len(nice) - 1
             if base_is_div and not is_div:
                 center = len(base_colors) // 2
-                # Use negative half (brown) when data is negative-dominant, positive half otherwise
-                sub    = base_colors[:center + 1] if med_val < 0 else base_colors[center + 1:]
+                # Use negative half (brown/cool) when data is negative-dominant;
+                # include neutral centre for positive half so gradient starts at white
+                sub    = base_colors[:center + 1] if med_val < 0 else base_colors[center:]
                 idxs   = np.round(np.linspace(0, len(sub) - 1, n_new)).astype(int)
                 colors = [sub[i] for i in idxs]
             else:
