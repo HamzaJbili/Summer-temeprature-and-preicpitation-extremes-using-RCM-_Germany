@@ -801,15 +801,6 @@ def plot_paired_trend_maps(
 
 
 # ── E-OBS trend + diff supplementary figure ───────────────────────────────────
-# Diverging palette used exclusively for the Diff panel (ICON − E-OBS).
-# Blue = ICON higher than E-OBS, red = ICON lower than E-OBS.
-_DIFF_COLORS = [
-    "#053061", "#2166ac", "#4393c3", "#92c5de", "#d1e5f0",
-    "#f7f7f7",
-    "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f",
-]
-
-
 def plot_obs_bias_maps(
     obs_slope, model_slope,
     obs_pval, model_pval,
@@ -823,19 +814,20 @@ def plot_obs_bias_maps(
 ):
     """
     Supplementary two-panel figure: (a) E-OBS trend with significance stippling,
-    (b) ICON − E-OBS arithmetic difference (no significance — not a statistical test).
+    (b) ICON − E-OBS arithmetic difference (no significance).
 
-    E-OBS panel  : uses obs_colors palette, auto-scaled to E-OBS data range.
-    Diff panel   : always uses a diverging blue-white-red palette, auto-scaled
-                   symmetrically around zero — visually distinct from E-OBS.
+    Both panels use the same base color palette (obs_colors), each independently
+    auto-scaled to its own data range.
     """
     from matplotlib.ticker import MaxNLocator
 
     PC   = ccrs.PlateCarree()
     PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
 
-    # ── E-OBS colormap — auto-scaled to actual data range ────────────────────
-    def _auto_scale_obs(data_arr, base_colors, base_levels):
+    obs_colors_orig = list(obs_colors)
+
+    def _auto_scale(data_arr, base_colors, base_levels):
+        """Auto-scale levels and resample base_colors to data range."""
         valid  = data_arr[np.isfinite(data_arr)]
         is_div = min(base_levels) < 0 < max(base_levels)
         if len(valid) <= 10:
@@ -862,42 +854,21 @@ def plot_obs_bias_maps(
         norm = mcolors.BoundaryNorm(levels, cmap.N)
         return levels, colors, cmap, norm
 
-    # ── Diff colormap — diverging, always symmetric around zero ──────────────
-    def _auto_scale_diff(data_arr):
-        valid = data_arr[np.isfinite(data_arr)]
-        vmax  = (max(abs(np.percentile(valid, 2)), abs(np.percentile(valid, 98)))
-                 if len(valid) > 10 else 1.0)
-        loc   = MaxNLocator(nbins=10, steps=[1, 2, 2.5, 5, 10], symmetric=True)
-        nice  = loc.tick_values(-vmax, vmax)
-        margin = vmax * 0.08
-        nice  = [float(t) for t in nice if (-vmax - margin) <= t <= (vmax + margin)]
-        if len(nice) >= 3:
-            n_new  = len(nice) - 1
-            idxs   = np.round(np.linspace(0, len(_DIFF_COLORS) - 1, n_new)).astype(int)
-            colors = [_DIFF_COLORS[i] for i in idxs]
-            levels = nice
-        else:
-            colors = list(_DIFF_COLORS)
-            levels = np.linspace(-vmax, vmax, 11).tolist()
-        cmap = mcolors.ListedColormap(colors)
-        norm = mcolors.BoundaryNorm(levels, cmap.N)
-        return levels, colors, cmap, norm
-
     diff = model_slope - obs_slope
 
-    obs_lvls,  _, cmap_obs,  norm_obs  = _auto_scale_obs(
-        obs_slope.values, list(obs_colors), obs_levels)
-    diff_lvls, _, cmap_diff, norm_diff = _auto_scale_diff(diff.values)
+    # Both panels use the same base palette, independently auto-scaled
+    obs_lvls,  _, cmap_obs,  norm_obs  = _auto_scale(
+        obs_slope.values, obs_colors_orig, obs_levels)
+    diff_lvls, _, cmap_diff, norm_diff = _auto_scale(
+        diff.values, obs_colors_orig, obs_levels)
 
-    # ── Figure layout — two map columns with a gap, colorbars via inset_axes ──
+    # ── Figure layout ─────────────────────────────────────────────────────────
     from matplotlib.gridspec import GridSpec
     fig = plt.figure(figsize=(10.5, 5.2))
     fig.patch.set_facecolor("white")
     if suptitle:
         fig.suptitle(suptitle, fontsize=11, fontweight="bold", y=0.99)
 
-    # Simple 3-column GridSpec: map_a | gap | map_b
-    # Colorbars attach via ax.inset_axes — no colorbar columns needed.
     gs  = GridSpec(1, 3, width_ratios=[1, 0.08, 1],
                    left=0.03, right=0.93, top=0.91, bottom=0.04,
                    wspace=0.0)
@@ -911,7 +882,7 @@ def plot_obs_bias_maps(
              stipple=True,  pval=obs_pval, tag="(a)"),
         dict(ax=axs[1], da=diff,
              cmap=cmap_diff, norm=norm_diff, lvls=diff_lvls,
-             title=title_diff, cbar_lbl=f"Diff [{cbar_label}]",
+             title=title_diff, cbar_lbl=cbar_label,   # no "Diff" prefix — title already says it
              stipple=False, pval=None,     tag="(b)"),
     ]
 
@@ -974,22 +945,22 @@ def plot_obs_bias_maps(
 
         style_axis(ax)
 
-        # ── Colorbar — slim vertical bar, exact same height as map axes ────────
-        # width=0.035 keeps it thin; x0=1.015 leaves a 1.5% gap from map edge
+        # Slim vertical colorbar — rectangular ends (extend="neither"),
+        # clean sparse ticks with float-safe tolerance filter
         cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
 
         is_div = min(lvls) < 0 < max(lvls)
         tloc   = MaxNLocator(nbins=6, steps=[1, 2, 5, 10], symmetric=is_div)
         traw   = tloc.tick_values(min(lvls), max(lvls))
-        ticks  = [t for t in traw if min(lvls) <= t <= max(lvls)]
+        eps    = (max(lvls) - min(lvls)) * 1e-6
+        ticks  = [t for t in traw if min(lvls) - eps <= t <= max(lvls) + eps]
 
         cb = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
-                          ticks=ticks, orientation="vertical", extend="both")
-        cb.ax.tick_params(labelsize=7, pad=2, length=3, width=0.5,
-                          direction="out")
+                          ticks=ticks, orientation="vertical", extend="neither")
+        cb.ax.tick_params(labelsize=7, pad=2, length=3, width=0.5, direction="out")
         cb.ax.yaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
         cb.outline.set_linewidth(0.5)
-        cb.set_label(p["cbar_lbl"], fontsize=8, labelpad=4)
+        cb.set_label(p["cbar_lbl"], fontsize=8, labelpad=4, fontweight="normal")
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
