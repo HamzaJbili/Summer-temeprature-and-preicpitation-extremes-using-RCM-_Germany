@@ -822,7 +822,22 @@ def plot_obs_bias_maps(
     PC   = ccrs.PlateCarree()
     PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
 
-    # ── E-OBS colormap (as passed in) ─────────────────────────────────────────
+    # ── E-OBS colormap — auto-scaled to actual data range (same as paired map) ──
+    obs_valid    = obs_slope.values[np.isfinite(obs_slope.values)]
+    is_div       = min(obs_levels) < 0 < max(obs_levels)
+    if len(obs_valid) > 10:
+        p2, p98 = np.percentile(obs_valid, 2), np.percentile(obs_valid, 98)
+        lo_o, hi_o = (-max(abs(p2), abs(p98)), max(abs(p2), abs(p98))) if is_div else (p2, p98)
+        nbins_o  = 10 if is_div else 8
+        loc_o    = MaxNLocator(nbins=nbins_o, steps=[1, 2, 2.5, 5, 10], symmetric=is_div)
+        nice_o   = loc_o.tick_values(lo_o, hi_o)
+        margin_o = (hi_o - lo_o) * 0.08
+        nice_o   = [float(t) for t in nice_o if (lo_o - margin_o) <= t <= (hi_o + margin_o)]
+        if len(nice_o) >= 3:
+            n_new      = len(nice_o) - 1
+            idxs_o     = np.round(np.linspace(0, len(obs_colors) - 1, n_new)).astype(int)
+            obs_colors = [obs_colors[i] for i in idxs_o]
+            obs_levels = nice_o
     cmap_obs = mcolors.ListedColormap(obs_colors)
     norm_obs = mcolors.BoundaryNorm(obs_levels, cmap_obs.N)
 
