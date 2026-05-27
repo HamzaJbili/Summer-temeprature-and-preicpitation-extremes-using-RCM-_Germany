@@ -820,6 +820,8 @@ def plot_obs_bias_maps(
     title_obs="E-OBS", title_diff="Diff (ICON − E-OBS)",
     tick_fmt="%.2f",
     suptitle=None,
+    obs_sequential=True,
+    diff_colors=None, diff_levels=None,
 ):
     """
     Supplementary two-panel figure: (a) E-OBS trend with significance stippling,
@@ -833,7 +835,9 @@ def plot_obs_bias_maps(
     PC   = ccrs.PlateCarree()
     PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
 
-    obs_colors_orig = list(obs_colors)
+    obs_colors_orig  = list(obs_colors)
+    diff_colors_orig = list(diff_colors) if diff_colors is not None else obs_colors_orig
+    diff_levels_base = list(diff_levels) if diff_levels is not None else obs_levels
 
     def _auto_scale(data_arr, base_colors, base_levels, obs_panel=False):
         """Auto-scale levels and resample base_colors to data range.
@@ -901,11 +905,12 @@ def plot_obs_bias_maps(
 
     diff = model_slope - obs_slope
 
-    # Both panels use the same base palette, independently auto-scaled
+    # E-OBS: sequential when obs_sequential=True (temperature); full diverging otherwise (precipitation)
+    # Diff: uses diff_colors/diff_levels when provided (e.g. TEMP_COLORS for precipitation Diff)
     obs_lvls,  _, cmap_obs,  norm_obs  = _auto_scale(
-        obs_slope.values, obs_colors_orig, obs_levels, obs_panel=True)
+        obs_slope.values, obs_colors_orig, obs_levels, obs_panel=obs_sequential)
     diff_lvls, _, cmap_diff, norm_diff = _auto_scale(
-        diff.values, obs_colors_orig, obs_levels)
+        diff.values, diff_colors_orig, diff_levels_base)
 
     # ── Figure layout ─────────────────────────────────────────────────────────
     from matplotlib.gridspec import GridSpec
