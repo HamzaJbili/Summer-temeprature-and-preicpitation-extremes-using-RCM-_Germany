@@ -21,7 +21,8 @@ from utils import (
     load_field,
     reference_mean, compute_anomalies, area_mean, rmse,
     compute_trend_maps, series_stats,
-    load_country_shape, build_mask, plot_paired_trend_maps, plot_germany_series,
+    load_country_shape, build_mask,
+    plot_paired_trend_maps, plot_obs_bias_maps, plot_germany_series,
     set_ipcc_style,
     START_YEAR, END_YEAR, ANOM_START, ANOM_END, DPI,
 )
@@ -117,6 +118,16 @@ def process_mean_index(name, annual_model, annual_obs, unit,
         gdf=gdf, geom=geom,
         outfile     = os.path.join(FIGDIR, f"{name}_trend_map.png"),
         levels=levels, colors=colors,
+        cbar_label  = trend_unit, tick_fmt=tick_fmt,
+    )
+
+    # Supplementary: E-OBS trend + bias side by side with independent colorbars
+    plot_obs_bias_maps(
+        obs_slope   = trend_obs["sen_slope"],
+        model_slope = trend_model["sen_slope"],
+        gdf=gdf, geom=geom,
+        outfile     = os.path.join(FIGDIR, f"{name}_obs_bias_map.png"),
+        obs_levels=levels, obs_colors=colors,
         cbar_label  = trend_unit, tick_fmt=tick_fmt,
     )
 

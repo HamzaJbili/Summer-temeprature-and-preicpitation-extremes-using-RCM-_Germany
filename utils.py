@@ -800,7 +800,119 @@ def plot_paired_trend_maps(
     plt.close(fig)
 
 
-# ── Germany-average time series plot ─────────────────────────────────────────
+# ── E-OBS trend + bias supplementary figure ───────────────────────────────────
+def plot_obs_bias_maps(
+    obs_slope, model_slope,
+    gdf, geom,
+    outfile,
+    obs_levels, obs_colors,
+    cbar_label,
+    title_obs="E-OBS", title_bias="Bias (ICON − E-OBS)",
+    tick_fmt="%.2f",
+    suptitle=None,
+):
+    """
+    Supplementary two-panel figure: (a) E-OBS trend, (b) ICON-CLM minus E-OBS.
+
+    Each panel has its own independent vertical colorbar so the two fields
+    can be read on their own scales without one compressing the other.
+    """
+    from matplotlib.ticker import MaxNLocator
+
+    PC   = ccrs.PlateCarree()
+    PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
+
+    # ── E-OBS colormap (as passed in) ─────────────────────────────────────────
+    cmap_obs = mcolors.ListedColormap(obs_colors)
+    norm_obs = mcolors.BoundaryNorm(obs_levels, cmap_obs.N)
+
+    # ── Bias field and auto-scaled diverging colormap ─────────────────────────
+    bias      = model_slope - obs_slope
+    bias_vals = bias.values[np.isfinite(bias.values)]
+    vmax      = max(abs(np.percentile(bias_vals, 2)),
+                    abs(np.percentile(bias_vals, 98))) if len(bias_vals) > 10 else 1.0
+
+    loc  = MaxNLocator(nbins=10, steps=[1, 2, 2.5, 5, 10], symmetric=True)
+    nice = loc.tick_values(-vmax, vmax)
+    margin = vmax * 0.08
+    nice = [float(t) for t in nice if (-vmax - margin) <= t <= (vmax + margin)]
+
+    _bias_base = ["#2166ac","#4393c3","#92c5de","#d1e5f0","#f7f7f7",
+                  "#fddbc7","#f4a582","#d6604d","#b2182b","#67001f"]
+    if len(nice) >= 3:
+        n_new     = len(nice) - 1
+        idxs      = np.round(np.linspace(0, len(_bias_base) - 1, n_new)).astype(int)
+        bias_col  = [_bias_base[i] for i in idxs]
+        bias_lvls = nice
+    else:
+        bias_col  = _bias_base
+        bias_lvls = np.linspace(-vmax, vmax, 11).tolist()
+
+    cmap_bias = mcolors.ListedColormap(bias_col)
+    norm_bias = mcolors.BoundaryNorm(bias_lvls, cmap_bias.N)
+
+    # ── Figure ────────────────────────────────────────────────────────────────
+    fig = plt.figure(figsize=(9.5, 5.5))
+    fig.patch.set_facecolor("white")
+    if suptitle:
+        fig.suptitle(suptitle, fontsize=11, fontweight="bold", y=0.99)
+
+    for i, (da, cmap, norm, lvls, title, panel_label) in enumerate([
+        (obs_slope, cmap_obs,  norm_obs,  obs_levels, title_obs,   "(a)"),
+        (bias,      cmap_bias, norm_bias, bias_lvls,  title_bias,  "(b)"),
+    ]):
+        ax = fig.add_subplot(1, 2, i + 1, projection=PROJ)
+        ax.set_extent(MAP_EXTENT, crs=PC)
+        ax.set_facecolor("#d6e8f2")
+        ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
+        ax.add_feature(cfeature.BORDERS.with_scale("10m"),
+                       linewidth=0.3, edgecolor="0.45", zorder=2)
+
+        fine    = interp_display(da)
+        de_mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
+        arr     = apply_mask(fine.values, de_mask)
+
+        ax.contourf(
+            fine["lon"].values, fine["lat"].values, arr,
+            levels=lvls, cmap=cmap, norm=norm,
+            transform=PC, extend="both", antialiased=True, zorder=3,
+        )
+        ax.add_geometries(gdf.geometry, PC, facecolor="none",
+                          edgecolor="white",   linewidth=1.8, zorder=5)
+        ax.add_geometries(gdf.geometry, PC, facecolor="none",
+                          edgecolor="#1a1a1a", linewidth=0.70, zorder=6)
+
+        ax.text(0.03, 0.97, panel_label, transform=ax.transAxes,
+                ha="left", va="top", fontsize=11, fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.22", fc="white",
+                          ec="#888888", alpha=0.92, lw=0.6))
+        ax.set_title(title, fontsize=11, fontweight="bold", pad=6)
+
+        de_mask_c = build_mask(da["lon"].values, da["lat"].values, geom)
+        mean_v    = float(np.nanmean(da.values[de_mask_c]))
+        sign      = "+" if mean_v >= 0 else ""
+        ax.text(0.03, 0.03, f"Mean: {sign}{mean_v:.3f}",
+                transform=ax.transAxes, ha="left", va="bottom",
+                fontsize=7.5, color="#222222",
+                bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                          ec="#aaaaaa", alpha=0.92, lw=0.5))
+
+        style_axis(ax)
+
+        # Vertical colorbar to the right of each panel
+        cbar_ax = ax.inset_axes([1.04, 0.0, 0.06, 1.0])
+        cb = ColorbarBase(cbar_ax, cmap=cmap, norm=norm, boundaries=lvls,
+                          ticks=lvls, orientation="vertical", extend="both")
+        cb.ax.tick_params(labelsize=7, pad=2)
+        cb.ax.yaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
+        lbl = cbar_label if i == 0 else f"Bias [{cbar_label}]"
+        cb.set_label(lbl, fontsize=8, labelpad=4)
+
+    plt.subplots_adjust(left=0.05, right=0.88, top=0.90, bottom=0.05, wspace=0.30)
+    fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+
+
 def plot_germany_series(
     obs_series, model_series,
     obs_anom,   model_anom,
