@@ -889,36 +889,36 @@ def plot_obs_bias_maps(
         obs_slope.values, list(obs_colors), obs_levels)
     diff_lvls, _, cmap_diff, norm_diff = _auto_scale_diff(diff.values)
 
-    # ── Figure layout ─────────────────────────────────────────────────────────
+    # ── Figure layout — two map columns with a gap, colorbars via inset_axes ──
     from matplotlib.gridspec import GridSpec
     fig = plt.figure(figsize=(11.0, 5.8))
     fig.patch.set_facecolor("white")
     if suptitle:
         fig.suptitle(suptitle, fontsize=11, fontweight="bold", y=0.99)
 
-    # columns: map_a | cbar_a | gap | map_b | cbar_b
-    gs  = GridSpec(1, 5, width_ratios=[1, 0.045, 0.07, 1, 0.045],
-                   left=0.04, right=0.97, top=0.91, bottom=0.05,
-                   wspace=0.04)
-    axs  = [fig.add_subplot(gs[0, 0], projection=PROJ),
-            fig.add_subplot(gs[0, 3], projection=PROJ)]
-    caxs = [fig.add_subplot(gs[0, 1]),
-            fig.add_subplot(gs[0, 4])]
+    # Simple 3-column GridSpec: map_a | gap | map_b
+    # Colorbars are attached directly to each map via ax.inset_axes so they
+    # are always the exact same height as the rendered map axes.
+    gs  = GridSpec(1, 3, width_ratios=[1, 0.10, 1],
+                   left=0.04, right=0.91, top=0.91, bottom=0.05,
+                   wspace=0.0)
+    axs = [fig.add_subplot(gs[0, 0], projection=PROJ),
+           fig.add_subplot(gs[0, 2], projection=PROJ)]
 
     panels = [
-        dict(ax=axs[0], cax=caxs[0], da=obs_slope,
+        dict(ax=axs[0], da=obs_slope,
              cmap=cmap_obs,  norm=norm_obs,  lvls=obs_lvls,
              title=title_obs,  cbar_lbl=cbar_label,
              stipple=True,  pval=obs_pval, tag="(a)"),
-        dict(ax=axs[1], cax=caxs[1], da=diff,
+        dict(ax=axs[1], da=diff,
              cmap=cmap_diff, norm=norm_diff, lvls=diff_lvls,
              title=title_diff, cbar_lbl=f"Diff [{cbar_label}]",
              stipple=False, pval=None,     tag="(b)"),
     ]
 
     for p in panels:
-        ax, cax = p["ax"], p["cax"]
-        da      = p["da"]
+        ax  = p["ax"]
+        da  = p["da"]
         cmap, norm, lvls = p["cmap"], p["norm"], p["lvls"]
 
         ax.set_extent(MAP_EXTENT, crs=PC)
@@ -959,14 +959,12 @@ def plot_obs_bias_maps(
                     bbox=dict(boxstyle="round,pad=0.20", fc="white",
                               ec="#aaaaaa", alpha=0.92, lw=0.5))
 
-        # Panel label and title
         ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
                 ha="left", va="top", fontsize=11, fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.22", fc="white",
                           ec="#888888", alpha=0.92, lw=0.6))
         ax.set_title(p["title"], fontsize=11, fontweight="bold", pad=6)
 
-        # Domain-mean annotation (bottom-left)
         mean_v = float(np.nanmean(da.values[de_mask_c]))
         sign   = "+" if mean_v >= 0 else ""
         ax.text(0.03, 0.03, f"Mean: {sign}{mean_v:.3f}",
@@ -977,15 +975,26 @@ def plot_obs_bias_maps(
 
         style_axis(ax)
 
-        # Slim vertical colorbar — same height as map, flat square ends not used
-        # (extend="both" gives triangular caps matching the reference paper style)
+        # ── Colorbar — inset_axes ensures exact same height as the map axes ──
+        # [x0, y0, width, height] in axes-fraction coordinates.
+        # x0=1.02 places it just outside the right edge; height=1.0 matches map.
+        cax = ax.inset_axes([1.02, 0.0, 0.06, 1.0])
+
+        # Compute clean, sparse display ticks (separate from the dense boundaries
+        # used for colour rendering).  steps=[1,2,5,10] avoids "2.5" multiples
+        # that produce messy values like 0.025, 0.075.
+        is_div  = min(lvls) < 0 < max(lvls)
+        tloc    = MaxNLocator(nbins=6, steps=[1, 2, 5, 10], symmetric=is_div)
+        traw    = tloc.tick_values(min(lvls), max(lvls))
+        ticks   = [t for t in traw if min(lvls) <= t <= max(lvls)]
+
         cb = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
-                          ticks=lvls, orientation="vertical", extend="both")
-        cb.ax.tick_params(labelsize=7, pad=2, length=3, width=0.5,
+                          ticks=ticks, orientation="vertical", extend="both")
+        cb.ax.tick_params(labelsize=7.5, pad=3, length=3.5, width=0.6,
                           direction="out")
         cb.ax.yaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
-        cb.outline.set_linewidth(0.6)
-        cb.set_label(p["cbar_lbl"], fontsize=8, labelpad=5)
+        cb.outline.set_linewidth(0.7)
+        cb.set_label(p["cbar_lbl"], fontsize=8.5, labelpad=6)
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
