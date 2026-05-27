@@ -411,6 +411,8 @@ def plot_climatology_maps(obs_clim, mod_clim, gdf, geom, outfile,
         ax.set_extent(MAP_EXTENT, crs=PC)
         ax.set_facecolor("#d6e8f2")
         ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
+        ax.add_feature(cfeature.BORDERS.with_scale("10m"),
+                       linewidth=0.3, edgecolor="0.45", zorder=2)
 
         fine = interp_display(da)
         mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
@@ -419,10 +421,10 @@ def plot_climatology_maps(obs_clim, mod_clim, gdf, geom, outfile,
         ax.contourf(
             fine["lon"].values, fine["lat"].values, arr,
             levels=lvls, cmap=cmap, norm=norm,
-            transform=PC, extend="both", antialiased=True, zorder=2,
+            transform=PC, extend="both", antialiased=True, zorder=3,
         )
         ax.add_geometries(gdf.geometry, PC, facecolor="none",
-                          edgecolor="black", linewidth=0.55, zorder=5)
+                          edgecolor="black", linewidth=0.55, zorder=6)
         ax.text(0.03, 0.97, plabel, transform=ax.transAxes,
                 ha="left", va="top", fontsize=9, fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
@@ -732,6 +734,8 @@ def plot_paired_trend_maps(
         ax.set_extent(MAP_EXTENT, crs=PC)
         ax.set_facecolor("#d6e8f2")
         ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
+        ax.add_feature(cfeature.BORDERS.with_scale("10m"),
+                       linewidth=0.3, edgecolor="0.45", zorder=2)
 
         fine    = interp_display(slope)
         de_mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
@@ -740,7 +744,7 @@ def plot_paired_trend_maps(
         ax.contourf(
             fine["lon"].values, fine["lat"].values, arr,
             levels=levels, cmap=cmap, norm=norm,
-            transform=PC, extend="both", antialiased=True, zorder=2,
+            transform=PC, extend="both", antialiased=True, zorder=3,
         )
 
         # White halo + dark border
@@ -960,6 +964,8 @@ def plot_precipitation_overview(index_meta, gdf, geom, outfile):
             ax.set_extent(MAP_EXTENT, crs=PC)
             ax.set_facecolor("#d6e8f2")
             ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
+            ax.add_feature(cfeature.BORDERS.with_scale("10m"),
+                           linewidth=0.3, edgecolor="0.45", zorder=2)
 
             fine = interp_display(slope)
             mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
@@ -968,7 +974,7 @@ def plot_precipitation_overview(index_meta, gdf, geom, outfile):
             ax.contourf(
                 fine["lon"].values, fine["lat"].values, arr,
                 levels=d["levels"], cmap=cmap, norm=norm,
-                transform=PC, extend="both", antialiased=True, zorder=2,
+                transform=PC, extend="both", antialiased=True, zorder=3,
             )
             ax.add_geometries(gdf.geometry, PC, facecolor="none",
                               edgecolor="black", linewidth=0.50, zorder=5)
