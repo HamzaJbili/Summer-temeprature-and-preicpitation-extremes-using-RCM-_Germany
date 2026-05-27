@@ -62,6 +62,31 @@ WET_DAY_MIN    = 1.0      # mm/day — wet-day threshold (R95p, R99p, SDII, CWD,
 DRY_DAY_MAX    = 1.0      # mm/day — dry-day threshold (Dry_days, CDD)
 
 
+# ── Colorbar helpers ──────────────────────────────────────────────────────────
+def _interp_colors(palette, n):
+    """Return n evenly-interpolated hex colors from palette (no index repeats)."""
+    cmap_tmp = mcolors.LinearSegmentedColormap.from_list('_', palette)
+    return [mcolors.to_hex(cmap_tmp(x)) for x in np.linspace(0, 1, n)]
+
+
+def _smart_ticks(lvls):
+    """Pick tick positions that always label zero and both endpoints."""
+    n = len(lvls)
+    if n <= 8:
+        return list(lvls)
+    zero_idx = next((i for i, t in enumerate(lvls) if abs(t) < 1e-9), None)
+    if zero_idx is not None:
+        offset = zero_idx % 2          # shift so zero is hit by [offset::2]
+        ticks = list(lvls[offset::2])
+    else:
+        ticks = list(lvls[::2])
+    if abs(float(ticks[0])  - float(lvls[0]))  > 1e-9:
+        ticks = [float(lvls[0])]  + ticks
+    if abs(float(ticks[-1]) - float(lvls[-1])) > 1e-9:
+        ticks = ticks + [float(lvls[-1])]
+    return ticks
+
+
 # ── IPCC / publication style ──────────────────────────────────────────────────
 def set_ipcc_style():
     """
@@ -700,6 +725,8 @@ def plot_paired_trend_maps(
                        key=lambda s: abs(span / s - n_target))
         if is_diverging:
             n_half = max(1, round(hi / step))
+            if n_half % 2 != 0:
+                n_half += 1          # force even → zero at even index → always labeled
             nice   = [round(i * step, 10) for i in range(-n_half, n_half + 1)]
         else:
             start  = np.floor(lo / step) * step
@@ -715,11 +742,9 @@ def plot_paired_trend_maps(
             if base_is_div and not is_diverging:
                 center = len(colors) // 2
                 sub    = colors[center + 1:] if p98 > 0 else colors[:center]
-                idxs   = np.round(np.linspace(0, len(sub) - 1, n_new)).astype(int)
-                colors = [sub[i] for i in idxs]
+                colors = _interp_colors(sub, n_new)
             else:
-                idxs   = np.round(np.linspace(0, len(colors) - 1, n_new)).astype(int)
-                colors = [colors[i] for i in idxs]
+                colors = _interp_colors(colors, n_new)
             levels = nice
 
     PC   = ccrs.PlateCarree()
@@ -799,7 +824,7 @@ def plot_paired_trend_maps(
         # Slim vertical colorbar — all boundary ticks labeled, rectangular ends
         cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
         cb  = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=levels,
-                           ticks=levels, orientation="vertical", extend="neither")
+                           ticks=_smart_ticks(levels), orientation="vertical", extend="neither")
         cb.ax.tick_params(labelsize=7, pad=2, length=3, width=0.5, direction="out")
         cb.ax.yaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
         cb.outline.set_linewidth(0.5)
@@ -875,6 +900,8 @@ def plot_obs_bias_maps(
                        key=lambda s: abs(span / s - n_target))
         if is_div:
             n_half = max(1, round(hi / step))
+            if n_half % 2 != 0:
+                n_half += 1          # force even → zero at even index → always labeled
             nice   = [round(i * step, 10) for i in range(-n_half, n_half + 1)]
         else:
             start  = np.floor(lo / step) * step
@@ -887,14 +914,10 @@ def plot_obs_bias_maps(
             n_new  = len(nice) - 1
             if base_is_div and not is_div:
                 center = len(base_colors) // 2
-                # Use negative half (brown/cool) when data is negative-dominant;
-                # include neutral centre for positive half so gradient starts at white
                 sub    = base_colors[:center + 1] if med_val < 0 else base_colors[center:]
-                idxs   = np.round(np.linspace(0, len(sub) - 1, n_new)).astype(int)
-                colors = [sub[i] for i in idxs]
+                colors = _interp_colors(sub, n_new)
             else:
-                idxs   = np.round(np.linspace(0, len(base_colors) - 1, n_new)).astype(int)
-                colors = [base_colors[i] for i in idxs]
+                colors = _interp_colors(base_colors, n_new)
             levels = nice
         else:
             colors = list(base_colors)
@@ -998,9 +1021,8 @@ def plot_obs_bias_maps(
         # Slim vertical colorbar — rectangular ends, all boundary ticks labeled
         cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
 
-        cbar_ticks = lvls[::2] if len(lvls) > 8 else lvls
         cb = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
-                          ticks=cbar_ticks, orientation="vertical", extend="neither")
+                          ticks=_smart_ticks(lvls), orientation="vertical", extend="neither")
         cb.ax.tick_params(labelsize=7, pad=2, length=3, width=0.5, direction="out")
         cb.ax.yaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
         cb.outline.set_linewidth(0.5)
