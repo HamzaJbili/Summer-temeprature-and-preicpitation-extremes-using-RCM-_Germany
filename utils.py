@@ -801,6 +801,15 @@ def plot_paired_trend_maps(
 
 
 # ── E-OBS trend + diff supplementary figure ───────────────────────────────────
+# Diverging palette used exclusively for the Diff panel (ICON − E-OBS).
+# Blue = ICON higher than E-OBS, red = ICON lower than E-OBS.
+_DIFF_COLORS = [
+    "#053061", "#2166ac", "#4393c3", "#92c5de", "#d1e5f0",
+    "#f7f7f7",
+    "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f",
+]
+
+
 def plot_obs_bias_maps(
     obs_slope, model_slope,
     obs_pval, model_pval,
@@ -813,21 +822,20 @@ def plot_obs_bias_maps(
     suptitle=None,
 ):
     """
-    Supplementary two-panel figure: (a) E-OBS trend, (b) ICON − E-OBS diff.
+    Supplementary two-panel figure: (a) E-OBS trend with significance stippling,
+    (b) ICON − E-OBS arithmetic difference (no significance — not a statistical test).
 
-    Both panels share the same base color palette, independently auto-scaled
-    to their own data ranges.  Each panel carries its own slim vertical colorbar
-    and significance stippling (dots = p < 0.05).
+    E-OBS panel  : uses obs_colors palette, auto-scaled to E-OBS data range.
+    Diff panel   : always uses a diverging blue-white-red palette, auto-scaled
+                   symmetrically around zero — visually distinct from E-OBS.
     """
     from matplotlib.ticker import MaxNLocator
 
     PC   = ccrs.PlateCarree()
     PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
 
-    obs_colors_orig = list(obs_colors)   # save before E-OBS scaling may modify the list
-
-    def _auto_scale(data_arr, base_colors, base_levels):
-        """Return (levels, colors, cmap, norm) auto-scaled to data_arr."""
+    # ── E-OBS colormap — auto-scaled to actual data range ────────────────────
+    def _auto_scale_obs(data_arr, base_colors, base_levels):
         valid  = data_arr[np.isfinite(data_arr)]
         is_div = min(base_levels) < 0 < max(base_levels)
         if len(valid) <= 10:
@@ -854,22 +862,43 @@ def plot_obs_bias_maps(
         norm = mcolors.BoundaryNorm(levels, cmap.N)
         return levels, colors, cmap, norm
 
+    # ── Diff colormap — diverging, always symmetric around zero ──────────────
+    def _auto_scale_diff(data_arr):
+        valid = data_arr[np.isfinite(data_arr)]
+        vmax  = (max(abs(np.percentile(valid, 2)), abs(np.percentile(valid, 98)))
+                 if len(valid) > 10 else 1.0)
+        loc   = MaxNLocator(nbins=10, steps=[1, 2, 2.5, 5, 10], symmetric=True)
+        nice  = loc.tick_values(-vmax, vmax)
+        margin = vmax * 0.08
+        nice  = [float(t) for t in nice if (-vmax - margin) <= t <= (vmax + margin)]
+        if len(nice) >= 3:
+            n_new  = len(nice) - 1
+            idxs   = np.round(np.linspace(0, len(_DIFF_COLORS) - 1, n_new)).astype(int)
+            colors = [_DIFF_COLORS[i] for i in idxs]
+            levels = nice
+        else:
+            colors = list(_DIFF_COLORS)
+            levels = np.linspace(-vmax, vmax, 11).tolist()
+        cmap = mcolors.ListedColormap(colors)
+        norm = mcolors.BoundaryNorm(levels, cmap.N)
+        return levels, colors, cmap, norm
+
     diff = model_slope - obs_slope
 
-    obs_lvls,  _, cmap_obs,  norm_obs  = _auto_scale(
-        obs_slope.values, obs_colors_orig, obs_levels)
-    diff_lvls, _, cmap_diff, norm_diff = _auto_scale(
-        diff.values, obs_colors_orig, obs_levels)
+    obs_lvls,  _, cmap_obs,  norm_obs  = _auto_scale_obs(
+        obs_slope.values, list(obs_colors), obs_levels)
+    diff_lvls, _, cmap_diff, norm_diff = _auto_scale_diff(diff.values)
 
-    # ── Figure — GridSpec: [map | cbar | spacer | map | cbar] ────────────────
+    # ── Figure layout ─────────────────────────────────────────────────────────
     from matplotlib.gridspec import GridSpec
-    fig = plt.figure(figsize=(10.0, 5.5))
+    fig = plt.figure(figsize=(11.0, 5.8))
     fig.patch.set_facecolor("white")
     if suptitle:
         fig.suptitle(suptitle, fontsize=11, fontweight="bold", y=0.99)
 
-    gs  = GridSpec(1, 5, width_ratios=[1, 0.04, 0.06, 1, 0.04],
-                   left=0.03, right=0.97, top=0.90, bottom=0.04,
+    # columns: map_a | cbar_a | gap | map_b | cbar_b
+    gs  = GridSpec(1, 5, width_ratios=[1, 0.045, 0.07, 1, 0.045],
+                   left=0.04, right=0.97, top=0.91, bottom=0.05,
                    wspace=0.04)
     axs  = [fig.add_subplot(gs[0, 0], projection=PROJ),
             fig.add_subplot(gs[0, 3], projection=PROJ)]
@@ -877,17 +906,19 @@ def plot_obs_bias_maps(
             fig.add_subplot(gs[0, 4])]
 
     panels = [
-        dict(ax=axs[0], cax=caxs[0], da=obs_slope, pval=obs_pval,
+        dict(ax=axs[0], cax=caxs[0], da=obs_slope,
              cmap=cmap_obs,  norm=norm_obs,  lvls=obs_lvls,
-             title=title_obs,  cbar_lbl=cbar_label,              tag="(a)"),
-        dict(ax=axs[1], cax=caxs[1], da=diff,      pval=model_pval,
+             title=title_obs,  cbar_lbl=cbar_label,
+             stipple=True,  pval=obs_pval, tag="(a)"),
+        dict(ax=axs[1], cax=caxs[1], da=diff,
              cmap=cmap_diff, norm=norm_diff, lvls=diff_lvls,
-             title=title_diff, cbar_lbl=f"Diff [{cbar_label}]", tag="(b)"),
+             title=title_diff, cbar_lbl=f"Diff [{cbar_label}]",
+             stipple=False, pval=None,     tag="(b)"),
     ]
 
     for p in panels:
-        ax, cax  = p["ax"], p["cax"]
-        da, pval = p["da"], p["pval"]
+        ax, cax = p["ax"], p["cax"]
+        da      = p["da"]
         cmap, norm, lvls = p["cmap"], p["norm"], p["lvls"]
 
         ax.set_extent(MAP_EXTENT, crs=PC)
@@ -910,28 +941,32 @@ def plot_obs_bias_maps(
         ax.add_geometries(gdf.geometry, PC, facecolor="none",
                           edgecolor="#1a1a1a", linewidth=0.70, zorder=6)
 
-        # Significance stippling (both panels)
-        de_mask_c  = build_mask(da["lon"].values, da["lat"].values, geom)
-        sig_mask   = pval.values < ALPHA
-        stip_mask  = sig_mask & de_mask_c
-        lo2d, la2d = np.meshgrid(da["lon"].values, da["lat"].values)
-        ax.scatter(lo2d[stip_mask], la2d[stip_mask],
-                   s=2.0, c="#1a1a1a", alpha=0.40, marker=".", zorder=7,
-                   rasterized=True, transform=PC)
-        n_de     = int(de_mask_c.sum())
-        sig_frac = stip_mask.sum() / n_de * 100 if n_de > 0 else 0.0
-        ax.text(0.97, 0.03, f"Sig. area: {sig_frac:.0f}%",
-                transform=ax.transAxes, ha="right", va="bottom",
-                fontsize=7.5, color="#222222",
-                bbox=dict(boxstyle="round,pad=0.20", fc="white",
-                          ec="#aaaaaa", alpha=0.92, lw=0.5))
+        de_mask_c = build_mask(da["lon"].values, da["lat"].values, geom)
 
+        # Significance stippling — E-OBS panel only
+        if p["stipple"]:
+            sig_mask  = p["pval"].values < ALPHA
+            stip_mask = sig_mask & de_mask_c
+            lo2d, la2d = np.meshgrid(da["lon"].values, da["lat"].values)
+            ax.scatter(lo2d[stip_mask], la2d[stip_mask],
+                       s=2.0, c="#1a1a1a", alpha=0.40, marker=".", zorder=7,
+                       rasterized=True, transform=PC)
+            n_de     = int(de_mask_c.sum())
+            sig_frac = stip_mask.sum() / n_de * 100 if n_de > 0 else 0.0
+            ax.text(0.97, 0.03, f"Sig. area: {sig_frac:.0f}%",
+                    transform=ax.transAxes, ha="right", va="bottom",
+                    fontsize=7.5, color="#222222",
+                    bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                              ec="#aaaaaa", alpha=0.92, lw=0.5))
+
+        # Panel label and title
         ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
                 ha="left", va="top", fontsize=11, fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.22", fc="white",
                           ec="#888888", alpha=0.92, lw=0.6))
         ax.set_title(p["title"], fontsize=11, fontweight="bold", pad=6)
 
+        # Domain-mean annotation (bottom-left)
         mean_v = float(np.nanmean(da.values[de_mask_c]))
         sign   = "+" if mean_v >= 0 else ""
         ax.text(0.03, 0.03, f"Mean: {sign}{mean_v:.3f}",
@@ -942,12 +977,15 @@ def plot_obs_bias_maps(
 
         style_axis(ax)
 
+        # Slim vertical colorbar — same height as map, flat square ends not used
+        # (extend="both" gives triangular caps matching the reference paper style)
         cb = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
                           ticks=lvls, orientation="vertical", extend="both")
-        cb.ax.tick_params(labelsize=6.5, pad=2, length=3, width=0.5)
+        cb.ax.tick_params(labelsize=7, pad=2, length=3, width=0.5,
+                          direction="out")
         cb.ax.yaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
-        cb.outline.set_linewidth(0.5)
-        cb.set_label(p["cbar_lbl"], fontsize=7.5, labelpad=4)
+        cb.outline.set_linewidth(0.6)
+        cb.set_label(p["cbar_lbl"], fontsize=8, labelpad=5)
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
