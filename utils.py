@@ -803,6 +803,7 @@ def plot_paired_trend_maps(
 # ── E-OBS trend + bias supplementary figure ───────────────────────────────────
 def plot_obs_bias_maps(
     obs_slope, model_slope,
+    obs_pval,
     gdf, geom,
     outfile,
     obs_levels, obs_colors,
@@ -866,17 +867,27 @@ def plot_obs_bias_maps(
     cmap_bias = mcolors.ListedColormap(bias_col)
     norm_bias = mcolors.BoundaryNorm(bias_lvls, cmap_bias.N)
 
-    # ── Figure ────────────────────────────────────────────────────────────────
-    fig = plt.figure(figsize=(9.5, 5.5))
+    # ── Figure — GridSpec: [map | cbar | spacer | map | cbar] ────────────────
+    from matplotlib.gridspec import GridSpec
+    fig = plt.figure(figsize=(10.0, 5.5))
     fig.patch.set_facecolor("white")
     if suptitle:
         fig.suptitle(suptitle, fontsize=11, fontweight="bold", y=0.99)
 
-    for i, (da, cmap, norm, lvls, title, panel_label) in enumerate([
-        (obs_slope, cmap_obs,  norm_obs,  obs_levels, title_obs,   "(a)"),
-        (bias,      cmap_bias, norm_bias, bias_lvls,  title_bias,  "(b)"),
-    ]):
-        ax = fig.add_subplot(1, 2, i + 1, projection=PROJ)
+    gs   = GridSpec(1, 5, width_ratios=[1, 0.04, 0.06, 1, 0.04],
+                    left=0.03, right=0.97, top=0.90, bottom=0.04,
+                    wspace=0.04)
+    axs  = [fig.add_subplot(gs[0, 0], projection=PROJ),
+            fig.add_subplot(gs[0, 3], projection=PROJ)]
+    caxs = [fig.add_subplot(gs[0, 1]),
+            fig.add_subplot(gs[0, 4])]
+
+    panels = [
+        (axs[0], caxs[0], obs_slope, cmap_obs, norm_obs, obs_levels, title_obs,  "(a)"),
+        (axs[1], caxs[1], bias,      cmap_bias, norm_bias, bias_lvls, title_bias, "(b)"),
+    ]
+
+    for i, (ax, cax, da, cmap, norm, lvls, title, panel_label) in enumerate(panels):
         ax.set_extent(MAP_EXTENT, crs=PC)
         ax.set_facecolor("#d6e8f2")
         ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
@@ -897,6 +908,23 @@ def plot_obs_bias_maps(
         ax.add_geometries(gdf.geometry, PC, facecolor="none",
                           edgecolor="#1a1a1a", linewidth=0.70, zorder=6)
 
+        # Stippling on E-OBS panel only
+        if i == 0:
+            de_mask_c  = build_mask(obs_slope["lon"].values, obs_slope["lat"].values, geom)
+            sig_mask   = obs_pval.values < ALPHA
+            stip_mask  = sig_mask & de_mask_c
+            lo2d, la2d = np.meshgrid(obs_slope["lon"].values, obs_slope["lat"].values)
+            ax.scatter(lo2d[stip_mask], la2d[stip_mask],
+                       s=2.0, c="#1a1a1a", alpha=0.40, marker=".", zorder=7,
+                       rasterized=True, transform=PC)
+            n_de     = int(de_mask_c.sum())
+            sig_frac = stip_mask.sum() / n_de * 100 if n_de > 0 else 0.0
+            ax.text(0.97, 0.03, f"Sig. area: {sig_frac:.0f}%",
+                    transform=ax.transAxes, ha="right", va="bottom",
+                    fontsize=7.5, color="#222222",
+                    bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                              ec="#aaaaaa", alpha=0.92, lw=0.5))
+
         ax.text(0.03, 0.97, panel_label, transform=ax.transAxes,
                 ha="left", va="top", fontsize=11, fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.22", fc="white",
@@ -914,16 +942,13 @@ def plot_obs_bias_maps(
 
         style_axis(ax)
 
-        # Vertical colorbar to the right of each panel
-        cbar_ax = ax.inset_axes([1.04, 0.0, 0.06, 1.0])
-        cb = ColorbarBase(cbar_ax, cmap=cmap, norm=norm, boundaries=lvls,
+        cb = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
                           ticks=lvls, orientation="vertical", extend="both")
         cb.ax.tick_params(labelsize=7, pad=2)
         cb.ax.yaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
         lbl = cbar_label if i == 0 else f"Bias [{cbar_label}]"
         cb.set_label(lbl, fontsize=8, labelpad=4)
 
-    plt.subplots_adjust(left=0.05, right=0.88, top=0.90, bottom=0.05, wspace=0.30)
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
 

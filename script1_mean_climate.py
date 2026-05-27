@@ -125,6 +125,7 @@ def process_mean_index(name, annual_model, annual_obs, unit,
     plot_obs_bias_maps(
         obs_slope   = trend_obs["sen_slope"],
         model_slope = trend_model["sen_slope"],
+        obs_pval    = trend_obs["mk_pvalue"],
         gdf=gdf, geom=geom,
         outfile     = os.path.join(FIGDIR, f"{name}_obs_bias_map.png"),
         obs_levels=levels, obs_colors=colors,
