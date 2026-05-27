@@ -686,20 +686,35 @@ def plot_paired_trend_maps(
 
     if len(valid) > 10:
         p2, p98      = np.percentile(valid, 2), np.percentile(valid, 98)
-        is_diverging = base_is_div and p2 < 0   # diverging when template is and data has negatives
-        lo, hi  = ((-max(abs(p2), abs(p98)), max(abs(p2), abs(p98)))
-                   if is_diverging else (p2, p98))
-        nbins   = 10 if is_diverging else 8
-        loc     = MaxNLocator(nbins=nbins, steps=[1, 2, 5, 10],
-                              symmetric=is_diverging)
-        nice    = loc.tick_values(lo, hi)
-        margin  = (hi - lo) * 0.08
-        nice    = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
+        is_diverging = base_is_div and p2 < 0
+        if is_diverging:
+            ext    = max(abs(p2), abs(p98))
+            lo, hi = -ext, ext
+        else:
+            lo, hi = p2, p98
+        n_target = 10 if is_diverging else 12
+        span     = hi - lo
+        raw_step = span / n_target
+        mag      = 10.0 ** np.floor(np.log10(raw_step))
+        step     = min([f * mag for f in [1, 2, 5, 10]],
+                       key=lambda s: abs(span / s - n_target))
+        if is_diverging:
+            n_half = max(1, round(hi / step))
+            nice   = [round(i * step, 10) for i in range(-n_half, n_half + 1)]
+        else:
+            start  = np.floor(lo / step) * step
+            nice   = np.round(np.arange(start, hi + step * 0.01, step), 10).tolist()
+            if hi < 0:
+                nice = [t for t in nice if t < 0]
+            elif lo > 0:
+                nice = [t for t in nice if t > 0]
+        margin = span * 0.08
+        nice   = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
         if len(nice) >= 3:
             n_new = len(nice) - 1
             if base_is_div and not is_diverging:
                 center = len(colors) // 2
-                sub    = colors[center:] if p98 > 0 else colors[:center + 1]
+                sub    = colors[center + 1:] if p98 > 0 else colors[:center]
                 idxs   = np.round(np.linspace(0, len(sub) - 1, n_new)).astype(int)
                 colors = [sub[i] for i in idxs]
             else:
@@ -836,18 +851,24 @@ def plot_obs_bias_maps(
         else:
             # p5–p95: tighter range reduces washed-out extremes
             lo, hi = np.percentile(valid, 5), np.percentile(valid, 95)
-        # Deterministic step: target 10 (div) or 12 (seq) intervals
+        # Pick step whose interval count is closest to n_target (avoids 0.02→0.05 jump)
         n_target = 10 if is_div else 12
         span     = hi - lo
         raw_step = span / n_target
         mag      = 10.0 ** np.floor(np.log10(raw_step))
-        step     = next(f * mag for f in [1, 2, 5, 10] if f * mag >= raw_step)
+        step     = min([f * mag for f in [1, 2, 5, 10]],
+                       key=lambda s: abs(span / s - n_target))
         if is_div:
             n_half = max(1, round(hi / step))
             nice   = [round(i * step, 10) for i in range(-n_half, n_half + 1)]
         else:
-            start = np.floor(lo / step) * step
-            nice  = np.round(np.arange(start, hi + step * 0.01, step), 10).tolist()
+            start  = np.floor(lo / step) * step
+            nice   = np.round(np.arange(start, hi + step * 0.01, step), 10).tolist()
+            # Strip spurious zero from float arithmetic when data is one-sided
+            if hi < 0:
+                nice = [t for t in nice if t < 0]
+            elif lo > 0:
+                nice = [t for t in nice if t > 0]
         margin = span * 0.08
         nice   = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
         if len(nice) >= 3:
