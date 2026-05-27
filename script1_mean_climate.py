@@ -219,7 +219,7 @@ if __name__ == "__main__":
         annual_model=tas_model_annual,
         annual_obs=tas_obs_annual,
         unit="°C",
-        trend_unit="°C decade⁻¹",
+        trend_unit="°C / decade",
         levels=TEMP_LEVELS,
         colors=TEMP_COLORS,
         tick_fmt="%.2f",
