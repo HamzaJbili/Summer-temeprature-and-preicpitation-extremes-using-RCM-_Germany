@@ -800,72 +800,66 @@ def plot_paired_trend_maps(
     plt.close(fig)
 
 
-# ── E-OBS trend + bias supplementary figure ───────────────────────────────────
+# ── E-OBS trend + diff supplementary figure ───────────────────────────────────
 def plot_obs_bias_maps(
     obs_slope, model_slope,
-    obs_pval,
+    obs_pval, model_pval,
     gdf, geom,
     outfile,
     obs_levels, obs_colors,
     cbar_label,
-    title_obs="E-OBS", title_bias="Bias (ICON − E-OBS)",
+    title_obs="E-OBS", title_diff="Diff (ICON − E-OBS)",
     tick_fmt="%.2f",
     suptitle=None,
 ):
     """
-    Supplementary two-panel figure: (a) E-OBS trend, (b) ICON-CLM minus E-OBS.
+    Supplementary two-panel figure: (a) E-OBS trend, (b) ICON − E-OBS diff.
 
-    Each panel has its own independent vertical colorbar so the two fields
-    can be read on their own scales without one compressing the other.
+    Both panels share the same base color palette, independently auto-scaled
+    to their own data ranges.  Each panel carries its own slim vertical colorbar
+    and significance stippling (dots = p < 0.05).
     """
     from matplotlib.ticker import MaxNLocator
 
     PC   = ccrs.PlateCarree()
     PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
 
-    # ── E-OBS colormap — auto-scaled to actual data range (same as paired map) ──
-    obs_valid    = obs_slope.values[np.isfinite(obs_slope.values)]
-    is_div       = min(obs_levels) < 0 < max(obs_levels)
-    if len(obs_valid) > 10:
-        p2, p98 = np.percentile(obs_valid, 2), np.percentile(obs_valid, 98)
-        lo_o, hi_o = (-max(abs(p2), abs(p98)), max(abs(p2), abs(p98))) if is_div else (p2, p98)
-        nbins_o  = 10 if is_div else 8
-        loc_o    = MaxNLocator(nbins=nbins_o, steps=[1, 2, 2.5, 5, 10], symmetric=is_div)
-        nice_o   = loc_o.tick_values(lo_o, hi_o)
-        margin_o = (hi_o - lo_o) * 0.08
-        nice_o   = [float(t) for t in nice_o if (lo_o - margin_o) <= t <= (hi_o + margin_o)]
-        if len(nice_o) >= 3:
-            n_new      = len(nice_o) - 1
-            idxs_o     = np.round(np.linspace(0, len(obs_colors) - 1, n_new)).astype(int)
-            obs_colors = [obs_colors[i] for i in idxs_o]
-            obs_levels = nice_o
-    cmap_obs = mcolors.ListedColormap(obs_colors)
-    norm_obs = mcolors.BoundaryNorm(obs_levels, cmap_obs.N)
+    obs_colors_orig = list(obs_colors)   # save before E-OBS scaling may modify the list
 
-    # ── Bias field and auto-scaled diverging colormap ─────────────────────────
-    bias      = model_slope - obs_slope
-    bias_vals = bias.values[np.isfinite(bias.values)]
-    vmax      = max(abs(np.percentile(bias_vals, 2)),
-                    abs(np.percentile(bias_vals, 98))) if len(bias_vals) > 10 else 1.0
+    def _auto_scale(data_arr, base_colors, base_levels):
+        """Return (levels, colors, cmap, norm) auto-scaled to data_arr."""
+        valid  = data_arr[np.isfinite(data_arr)]
+        is_div = min(base_levels) < 0 < max(base_levels)
+        if len(valid) <= 10:
+            cmap = mcolors.ListedColormap(base_colors)
+            norm = mcolors.BoundaryNorm(base_levels, cmap.N)
+            return list(base_levels), list(base_colors), cmap, norm
+        p2, p98 = np.percentile(valid, 2), np.percentile(valid, 98)
+        lo, hi  = ((-max(abs(p2), abs(p98)), max(abs(p2), abs(p98)))
+                   if is_div else (p2, p98))
+        nbins   = 10 if is_div else 8
+        loc     = MaxNLocator(nbins=nbins, steps=[1, 2, 2.5, 5, 10], symmetric=is_div)
+        nice    = loc.tick_values(lo, hi)
+        margin  = (hi - lo) * 0.08
+        nice    = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
+        if len(nice) >= 3:
+            n_new  = len(nice) - 1
+            idxs   = np.round(np.linspace(0, len(base_colors) - 1, n_new)).astype(int)
+            colors = [base_colors[i] for i in idxs]
+            levels = nice
+        else:
+            colors = list(base_colors)
+            levels = list(base_levels)
+        cmap = mcolors.ListedColormap(colors)
+        norm = mcolors.BoundaryNorm(levels, cmap.N)
+        return levels, colors, cmap, norm
 
-    loc  = MaxNLocator(nbins=10, steps=[1, 2, 2.5, 5, 10], symmetric=True)
-    nice = loc.tick_values(-vmax, vmax)
-    margin = vmax * 0.08
-    nice = [float(t) for t in nice if (-vmax - margin) <= t <= (vmax + margin)]
+    diff = model_slope - obs_slope
 
-    _bias_base = ["#2166ac","#4393c3","#92c5de","#d1e5f0","#f7f7f7",
-                  "#fddbc7","#f4a582","#d6604d","#b2182b","#67001f"]
-    if len(nice) >= 3:
-        n_new     = len(nice) - 1
-        idxs      = np.round(np.linspace(0, len(_bias_base) - 1, n_new)).astype(int)
-        bias_col  = [_bias_base[i] for i in idxs]
-        bias_lvls = nice
-    else:
-        bias_col  = _bias_base
-        bias_lvls = np.linspace(-vmax, vmax, 11).tolist()
-
-    cmap_bias = mcolors.ListedColormap(bias_col)
-    norm_bias = mcolors.BoundaryNorm(bias_lvls, cmap_bias.N)
+    obs_lvls,  _, cmap_obs,  norm_obs  = _auto_scale(
+        obs_slope.values, obs_colors_orig, obs_levels)
+    diff_lvls, _, cmap_diff, norm_diff = _auto_scale(
+        diff.values, obs_colors_orig, obs_levels)
 
     # ── Figure — GridSpec: [map | cbar | spacer | map | cbar] ────────────────
     from matplotlib.gridspec import GridSpec
@@ -874,20 +868,28 @@ def plot_obs_bias_maps(
     if suptitle:
         fig.suptitle(suptitle, fontsize=11, fontweight="bold", y=0.99)
 
-    gs   = GridSpec(1, 5, width_ratios=[1, 0.04, 0.06, 1, 0.04],
-                    left=0.03, right=0.97, top=0.90, bottom=0.04,
-                    wspace=0.04)
+    gs  = GridSpec(1, 5, width_ratios=[1, 0.04, 0.06, 1, 0.04],
+                   left=0.03, right=0.97, top=0.90, bottom=0.04,
+                   wspace=0.04)
     axs  = [fig.add_subplot(gs[0, 0], projection=PROJ),
             fig.add_subplot(gs[0, 3], projection=PROJ)]
     caxs = [fig.add_subplot(gs[0, 1]),
             fig.add_subplot(gs[0, 4])]
 
     panels = [
-        (axs[0], caxs[0], obs_slope, cmap_obs, norm_obs, obs_levels, title_obs,  "(a)"),
-        (axs[1], caxs[1], bias,      cmap_bias, norm_bias, bias_lvls, title_bias, "(b)"),
+        dict(ax=axs[0], cax=caxs[0], da=obs_slope, pval=obs_pval,
+             cmap=cmap_obs,  norm=norm_obs,  lvls=obs_lvls,
+             title=title_obs,  cbar_lbl=cbar_label,              tag="(a)"),
+        dict(ax=axs[1], cax=caxs[1], da=diff,      pval=model_pval,
+             cmap=cmap_diff, norm=norm_diff, lvls=diff_lvls,
+             title=title_diff, cbar_lbl=f"Diff [{cbar_label}]", tag="(b)"),
     ]
 
-    for i, (ax, cax, da, cmap, norm, lvls, title, panel_label) in enumerate(panels):
+    for p in panels:
+        ax, cax  = p["ax"], p["cax"]
+        da, pval = p["da"], p["pval"]
+        cmap, norm, lvls = p["cmap"], p["norm"], p["lvls"]
+
         ax.set_extent(MAP_EXTENT, crs=PC)
         ax.set_facecolor("#d6e8f2")
         ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
@@ -908,32 +910,30 @@ def plot_obs_bias_maps(
         ax.add_geometries(gdf.geometry, PC, facecolor="none",
                           edgecolor="#1a1a1a", linewidth=0.70, zorder=6)
 
-        # Stippling on E-OBS panel only
-        if i == 0:
-            de_mask_c  = build_mask(obs_slope["lon"].values, obs_slope["lat"].values, geom)
-            sig_mask   = obs_pval.values < ALPHA
-            stip_mask  = sig_mask & de_mask_c
-            lo2d, la2d = np.meshgrid(obs_slope["lon"].values, obs_slope["lat"].values)
-            ax.scatter(lo2d[stip_mask], la2d[stip_mask],
-                       s=2.0, c="#1a1a1a", alpha=0.40, marker=".", zorder=7,
-                       rasterized=True, transform=PC)
-            n_de     = int(de_mask_c.sum())
-            sig_frac = stip_mask.sum() / n_de * 100 if n_de > 0 else 0.0
-            ax.text(0.97, 0.03, f"Sig. area: {sig_frac:.0f}%",
-                    transform=ax.transAxes, ha="right", va="bottom",
-                    fontsize=7.5, color="#222222",
-                    bbox=dict(boxstyle="round,pad=0.20", fc="white",
-                              ec="#aaaaaa", alpha=0.92, lw=0.5))
+        # Significance stippling (both panels)
+        de_mask_c  = build_mask(da["lon"].values, da["lat"].values, geom)
+        sig_mask   = pval.values < ALPHA
+        stip_mask  = sig_mask & de_mask_c
+        lo2d, la2d = np.meshgrid(da["lon"].values, da["lat"].values)
+        ax.scatter(lo2d[stip_mask], la2d[stip_mask],
+                   s=2.0, c="#1a1a1a", alpha=0.40, marker=".", zorder=7,
+                   rasterized=True, transform=PC)
+        n_de     = int(de_mask_c.sum())
+        sig_frac = stip_mask.sum() / n_de * 100 if n_de > 0 else 0.0
+        ax.text(0.97, 0.03, f"Sig. area: {sig_frac:.0f}%",
+                transform=ax.transAxes, ha="right", va="bottom",
+                fontsize=7.5, color="#222222",
+                bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                          ec="#aaaaaa", alpha=0.92, lw=0.5))
 
-        ax.text(0.03, 0.97, panel_label, transform=ax.transAxes,
+        ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
                 ha="left", va="top", fontsize=11, fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.22", fc="white",
                           ec="#888888", alpha=0.92, lw=0.6))
-        ax.set_title(title, fontsize=11, fontweight="bold", pad=6)
+        ax.set_title(p["title"], fontsize=11, fontweight="bold", pad=6)
 
-        de_mask_c = build_mask(da["lon"].values, da["lat"].values, geom)
-        mean_v    = float(np.nanmean(da.values[de_mask_c]))
-        sign      = "+" if mean_v >= 0 else ""
+        mean_v = float(np.nanmean(da.values[de_mask_c]))
+        sign   = "+" if mean_v >= 0 else ""
         ax.text(0.03, 0.03, f"Mean: {sign}{mean_v:.3f}",
                 transform=ax.transAxes, ha="left", va="bottom",
                 fontsize=7.5, color="#222222",
@@ -944,10 +944,10 @@ def plot_obs_bias_maps(
 
         cb = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
                           ticks=lvls, orientation="vertical", extend="both")
-        cb.ax.tick_params(labelsize=7, pad=2)
+        cb.ax.tick_params(labelsize=6.5, pad=2, length=3, width=0.5)
         cb.ax.yaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
-        lbl = cbar_label if i == 0 else f"Bias [{cbar_label}]"
-        cb.set_label(lbl, fontsize=8, labelpad=4)
+        cb.outline.set_linewidth(0.5)
+        cb.set_label(p["cbar_lbl"], fontsize=7.5, labelpad=4)
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
