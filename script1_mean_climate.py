@@ -227,7 +227,6 @@ if __name__ == "__main__":
         tick_fmt="%.2f",
         gdf=gdf, geom=geom, rows=rows,
         obs_sequential=False,
-        diff_colors=TEMP_COLORS, diff_levels=TEMP_LEVELS,
     )
 
     pd.DataFrame(rows).to_csv(
