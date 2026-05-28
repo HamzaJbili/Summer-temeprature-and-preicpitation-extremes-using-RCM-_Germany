@@ -826,8 +826,8 @@ def plot_paired_trend_maps(
 
         # Slim vertical colorbar — all boundary ticks labeled, rectangular ends
         cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
-        cb  = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=levels,
-                           ticks=_smart_ticks(levels), orientation="vertical", extend="neither")
+        cb  = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
+                           ticks=_smart_ticks(lvls), orientation="vertical", extend="neither")
         cb.ax.tick_params(labelsize=6, pad=2, length=3, width=0.5, direction="out")
         cb.ax.yaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
         cb.outline.set_linewidth(0.5)
