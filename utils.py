@@ -109,6 +109,12 @@ def _auto_scale_palette(data_arr, base_levels, base_colors, force_diverging=Fals
         lo, hi = p2, p98
     n_target = 14 if is_diverging else 12
     span     = hi - lo
+    if not np.isfinite(span) or span < 1e-12:
+        cmap = mcolors.ListedColormap(colors)
+        cmap.set_under(colors[0])
+        cmap.set_over(colors[-1])
+        norm = mcolors.BoundaryNorm(levels, cmap.N)
+        return levels, colors, cmap, norm
     raw_step = span / n_target
     mag      = 10.0 ** np.floor(np.log10(raw_step))
     step     = min([f * mag for f in [1, 2, 5, 10]],
@@ -751,6 +757,7 @@ def plot_paired_trend_maps(
     title_obs="E-OBS", title_model="ICON-CLM",
     tick_fmt="%.2f",
     suptitle=None,
+    force_diverging=False,
 ):
     """
     Publication-quality two-panel trend map: (a) E-OBS, (b) ICON-CLM.
@@ -780,7 +787,7 @@ def plot_paired_trend_maps(
     # Shared scale — pool both panels so the comparison is scientifically valid
     combined = np.concatenate([obs_slope.values.ravel(), model_slope.values.ravel()])
     lvls_shared, _, cmap_shared, norm_shared = _auto_scale_palette(
-        combined, levels_base, colors_base, force_diverging=True)
+        combined, levels_base, colors_base, force_diverging=force_diverging)
 
     for i, (slope, pval, ds_title, panel_label) in enumerate([
         (obs_slope,   obs_pval,   title_obs,   "(a)"),
