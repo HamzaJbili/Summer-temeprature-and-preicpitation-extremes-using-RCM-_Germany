@@ -45,8 +45,17 @@ os.makedirs(TABDIR, exist_ok=True)
 TEMP_LEVELS = [-0.20, -0.15, -0.10, -0.05, 0.00,
                 0.05,  0.10,  0.15,  0.20, 0.25, 0.30, 0.35]
 TEMP_COLORS = [
-    "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#f7f7f7",
-    "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#8c0d1c", "#67001f",
+    "#2166ac",  # blue          (strong cooling)
+    "#74add1",  # light blue    (only 2 blue bands)
+    "#fee391",  # pale yellow   (near-zero, replaces white)
+    "#fecc5c",  # yellow
+    "#fea82d",  # amber
+    "#fc7d00",  # orange        (centre band — no white)
+    "#e05b00",  # dark orange
+    "#c23b00",  # orange-red
+    "#8f1c00",  # red
+    "#5c0c00",  # dark red
+    "#300600",  # very dark red
 ]
 
 PREC_LEVELS = [-0.30, -0.20, -0.15, -0.10, -0.05, 0, 0.05, 0.10, 0.15, 0.20, 0.30]
