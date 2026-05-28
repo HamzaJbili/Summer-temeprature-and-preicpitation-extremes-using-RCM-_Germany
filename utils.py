@@ -70,21 +70,58 @@ def _interp_colors(palette, n):
 
 
 def _smart_ticks(lvls):
-    """Pick tick positions that always label zero and both endpoints."""
-    n = len(lvls)
-    if n <= 8:
-        return list(lvls)
-    zero_idx = next((i for i, t in enumerate(lvls) if abs(t) < 1e-9), None)
-    if zero_idx is not None:
-        offset = zero_idx % 2          # shift so zero is hit by [offset::2]
-        ticks = list(lvls[offset::2])
+    """Return all level boundaries as tick positions (every band labeled)."""
+    return list(lvls)
+
+
+def _auto_scale_palette(data_arr, base_levels, base_colors):
+    """Auto-scale levels and palette to one panel's data range.
+
+    Returns (levels, colors, cmap, norm).
+    """
+    colors = list(base_colors)
+    levels = list(base_levels)
+    base_is_div = min(levels) < 0 < max(levels)
+    valid = np.asarray(data_arr).ravel()
+    valid = valid[np.isfinite(valid)]
+    if len(valid) <= 10:
+        cmap = mcolors.ListedColormap(colors)
+        norm = mcolors.BoundaryNorm(levels, cmap.N)
+        return levels, colors, cmap, norm
+    p2, p98      = np.percentile(valid, 2), np.percentile(valid, 98)
+    is_diverging = base_is_div and p2 < 0
+    if is_diverging:
+        ext    = max(abs(p2), abs(p98))
+        lo, hi = -ext, ext
     else:
-        ticks = list(lvls[::2])
-    if abs(float(ticks[0])  - float(lvls[0]))  > 1e-9:
-        ticks = [float(lvls[0])]  + ticks
-    if abs(float(ticks[-1]) - float(lvls[-1])) > 1e-9:
-        ticks = ticks + [float(lvls[-1])]
-    return ticks
+        lo, hi = p2, p98
+    n_target = 14 if is_diverging else 12
+    span     = hi - lo
+    raw_step = span / n_target
+    mag      = 10.0 ** np.floor(np.log10(raw_step))
+    step     = min([f * mag for f in [1, 2, 5, 10]],
+                   key=lambda s: abs(span / s - n_target))
+    if is_diverging:
+        n_half = max(1, round(hi / step))
+        if n_half % 2 != 0:
+            n_half += 1
+        nice = [round(i * step, 10) for i in range(-n_half, n_half + 1)]
+    else:
+        start = np.floor(lo / step) * step
+        nice  = np.round(np.arange(start, hi + step * 0.01, step), 10).tolist()
+        if hi < 0:
+            nice = [t for t in nice if t < 0]
+        elif lo > 0:
+            nice = [t for t in nice if t > 0]
+    margin = span * 0.08
+    nice   = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
+    if len(nice) >= 3:
+        n_new  = len(nice) - 1
+        colors = _interp_colors(colors, n_new)   # full palette → max contrast per panel
+        levels = nice
+    cmap = mcolors.ListedColormap(colors)
+    norm = mcolors.BoundaryNorm(levels, cmap.N)
+    return levels, colors, cmap, norm
 
 
 # ── IPCC / publication style ──────────────────────────────────────────────────
@@ -704,54 +741,12 @@ def plot_paired_trend_maps(
     from matplotlib.ticker import MaxNLocator
     from matplotlib.gridspec import GridSpec
 
-    # ── Auto-scale levels to p2–p98 of combined data ─────────────────────────
-    combined    = np.concatenate([obs_slope.values.ravel(), model_slope.values.ravel()])
-    valid       = combined[np.isfinite(combined)]
-    base_is_div = min(levels) < 0 < max(levels)
-
-    if len(valid) > 10:
-        p2, p98      = np.percentile(valid, 2), np.percentile(valid, 98)
-        is_diverging = base_is_div and p2 < 0
-        if is_diverging:
-            ext    = max(abs(p2), abs(p98))
-            lo, hi = -ext, ext
-        else:
-            lo, hi = p2, p98
-        n_target = 10 if is_diverging else 12
-        span     = hi - lo
-        raw_step = span / n_target
-        mag      = 10.0 ** np.floor(np.log10(raw_step))
-        step     = min([f * mag for f in [1, 2, 5, 10]],
-                       key=lambda s: abs(span / s - n_target))
-        if is_diverging:
-            n_half = max(1, round(hi / step))
-            if n_half % 2 != 0:
-                n_half += 1          # force even → zero at even index → always labeled
-            nice   = [round(i * step, 10) for i in range(-n_half, n_half + 1)]
-        else:
-            start  = np.floor(lo / step) * step
-            nice   = np.round(np.arange(start, hi + step * 0.01, step), 10).tolist()
-            if hi < 0:
-                nice = [t for t in nice if t < 0]
-            elif lo > 0:
-                nice = [t for t in nice if t > 0]
-        margin = span * 0.08
-        nice   = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
-        if len(nice) >= 3:
-            n_new = len(nice) - 1
-            if base_is_div and not is_diverging:
-                center = len(colors) // 2
-                sub    = colors[center + 1:] if p98 > 0 else colors[:center]
-                colors = _interp_colors(sub, n_new)
-            else:
-                colors = _interp_colors(colors, n_new)
-            levels = nice
-
     PC   = ccrs.PlateCarree()
     PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
 
-    cmap = mcolors.ListedColormap(colors)
-    norm = mcolors.BoundaryNorm(levels, cmap.N)
+    # Template palette kept unchanged; each panel gets its own independent scale
+    levels_base = list(levels)
+    colors_base = list(colors)
 
     # GridSpec: map_a | gap | map_b  (colorbars via inset_axes)
     fig = plt.figure(figsize=(10.5, 5.5))
@@ -767,6 +762,9 @@ def plot_paired_trend_maps(
         (obs_slope,   obs_pval,   title_obs,   "(a)"),
         (model_slope, model_pval, title_model, "(b)"),
     ]):
+        # Independent auto-scale to this panel's own data range
+        lvls, _, cmap, norm = _auto_scale_palette(slope.values, levels_base, colors_base)
+
         ax = fig.add_subplot(gs[0, 0 if i == 0 else 2], projection=PROJ)
         ax.set_extent(MAP_EXTENT, crs=PC)
         ax.set_facecolor("#d6e8f2")
@@ -780,7 +778,7 @@ def plot_paired_trend_maps(
 
         ax.contourf(
             fine["lon"].values, fine["lat"].values, arr,
-            levels=levels, cmap=cmap, norm=norm,
+            levels=lvls, cmap=cmap, norm=norm,
             transform=PC, extend="both", antialiased=True, zorder=3,
         )
         ax.add_geometries(gdf.geometry, PC, facecolor="none",
@@ -825,7 +823,7 @@ def plot_paired_trend_maps(
         cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
         cb  = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=levels,
                            ticks=_smart_ticks(levels), orientation="vertical", extend="neither")
-        cb.ax.tick_params(labelsize=7, pad=2, length=3, width=0.5, direction="out")
+        cb.ax.tick_params(labelsize=6, pad=2, length=3, width=0.5, direction="out")
         cb.ax.yaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
         cb.outline.set_linewidth(0.5)
         cb.set_label(cbar_label, fontsize=8, labelpad=4, fontweight="normal")
@@ -1023,7 +1021,7 @@ def plot_obs_bias_maps(
 
         cb = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
                           ticks=_smart_ticks(lvls), orientation="vertical", extend="neither")
-        cb.ax.tick_params(labelsize=7, pad=2, length=3, width=0.5, direction="out")
+        cb.ax.tick_params(labelsize=6, pad=2, length=3, width=0.5, direction="out")
         cb.ax.yaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
         cb.outline.set_linewidth(0.5)
         cb.set_label(p["cbar_lbl"], fontsize=8, labelpad=4, fontweight="normal")
