@@ -74,8 +74,12 @@ def _smart_ticks(lvls):
     return list(lvls)
 
 
-def _auto_scale_palette(data_arr, base_levels, base_colors):
+def _auto_scale_palette(data_arr, base_levels, base_colors, anchor_zero=False):
     """Auto-scale levels and palette to one panel's data range.
+
+    anchor_zero=True: for diverging-base all-positive data, start the scale
+    at 0 so the colorbar shows the full blue→red context (blue = near-zero
+    warming, red = strong warming).  Default False preserves old behaviour.
 
     Returns (levels, colors, cmap, norm).
     """
@@ -92,9 +96,15 @@ def _auto_scale_palette(data_arr, base_levels, base_colors):
         return levels, colors, cmap, norm
     p2, p98      = np.percentile(valid, 2), np.percentile(valid, 98)
     is_diverging = base_is_div and p2 < 0
+
+    # Anchor at zero: keep full blue→red palette when all data is positive
+    zero_anchored = anchor_zero and base_is_div and not is_diverging and p2 >= 0
+
     if is_diverging:
         ext    = max(abs(p2), abs(p98))
         lo, hi = -ext, ext
+    elif zero_anchored:
+        lo, hi = 0.0, p98
     else:
         lo, hi = p2, p98
     n_target = 14 if is_diverging else 12
@@ -119,11 +129,13 @@ def _auto_scale_palette(data_arr, base_levels, base_colors):
     nice   = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
     if len(nice) >= 3:
         n_new = len(nice) - 1
-        if base_is_div and not is_diverging:
+        if base_is_div and not is_diverging and not zero_anchored:
+            # Default: use only the warm (or cold) half of the palette
             center = len(colors) // 2
             sub    = colors[center:] if p98 > 0 else colors[:center + 1]
             colors = _interp_colors(sub, n_new)
         else:
+            # Full palette: diverging case OR zero-anchored case
             colors = _interp_colors(colors, n_new)
         levels = nice
     cmap = mcolors.ListedColormap(colors)
@@ -769,7 +781,7 @@ def plot_paired_trend_maps(
     # Shared scale — pool both panels so the comparison is scientifically valid
     combined = np.concatenate([obs_slope.values.ravel(), model_slope.values.ravel()])
     lvls_shared, _, cmap_shared, norm_shared = _auto_scale_palette(
-        combined, levels_base, colors_base)
+        combined, levels_base, colors_base, anchor_zero=True)
 
     for i, (slope, pval, ds_title, panel_label) in enumerate([
         (obs_slope,   obs_pval,   title_obs,   "(a)"),
