@@ -1070,15 +1070,73 @@ def plot_germany_series(
     ylabel, title, outfile,
     ylabel_anom=None,
     obs_stats=None, model_stats=None,
+    simple=False,
 ):
     """
-    Two-panel stacked figure for Germany-average values.
+    Germany-average time series figure.
 
-    Top panel (a)    — annual scatter + 5-yr dashed + 10-yr solid for both datasets.
-    Bottom panel (b) — E-OBS sign-coloured bars + ICON-CLM raw annual line (dark grey).
+    simple=False (default, script 1): two-panel layout —
+        top: annual scatter + 5-yr / 10-yr rolling means;
+        bottom: sign-coloured anomaly bars.
+
+    simple=True (script 2 extremes): single panel —
+        annual time series lines for E-OBS and ICON-CLM plus
+        Theil-Sen trend lines.  No rolling means, no anomalies.
     """
     from matplotlib.lines import Line2D
 
+    OBS_COL = "#1b7837"
+    MOD_COL = "#b2182b"
+
+    years    = obs_series["year"].values.astype(int)
+    obs_vals = obs_series.values.astype(float)
+    mod_vals = model_series.values.astype(float)
+
+    # ── Simple single-panel version (script 2) ────────────────────────────────
+    if simple:
+        fig, ax = plt.subplots(figsize=(10, 4.5))
+        fig.patch.set_facecolor("white")
+        fig.suptitle(title, fontsize=10, fontweight="bold", y=1.01)
+
+        ax.plot(years, obs_vals, color=OBS_COL, lw=1.4, alpha=0.90,
+                label="E-OBS", zorder=3)
+        ax.plot(years, mod_vals, color=MOD_COL, lw=1.4, alpha=0.90,
+                label="ICON-CLM", zorder=3)
+
+        # Theil-Sen trend lines
+        for vals, col, stats, lbl in [
+            (obs_vals, OBS_COL, obs_stats,   "E-OBS trend"),
+            (mod_vals, MOD_COL, model_stats, "ICON-CLM trend"),
+        ]:
+            if stats is not None:
+                slope_yr  = stats["sen_slope_decade"] / 10.0
+                valid     = np.isfinite(vals)
+                mean_x    = np.mean(years[valid])
+                mean_y    = np.mean(vals[valid])
+                intercept = mean_y - slope_yr * mean_x
+                trend     = intercept + slope_yr * years
+                p         = stats["mk_p"]
+                sig_str   = "**" if p < 0.01 else ("*" if p < 0.05 else "")
+                slope_str = (f"{slope_yr * 10:+.3f} {ylabel} dec⁻¹{sig_str}")
+                ax.plot(years, trend, "--", color=col, lw=2.0, alpha=0.95,
+                        label=f"{lbl}: {slope_str}", zorder=4)
+
+        ax.set_xlabel("Year", fontsize=9)
+        ax.set_ylabel(ylabel, fontsize=9)
+        ax.tick_params(labelsize=8)
+        ax.legend(fontsize=8, frameon=True, framealpha=0.88,
+                  edgecolor="0.70", loc="upper left")
+        ax.grid(True, linestyle="--", linewidth=0.35, alpha=0.55, zorder=0)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines[["left", "bottom"]].set_linewidth(0.7)
+
+        plt.tight_layout()
+        fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
+        plt.close(fig)
+        return
+
+    # ── Full two-panel version (script 1) ─────────────────────────────────────
     fig, (ax1, ax2) = plt.subplots(
         2, 1, figsize=(11, 7.0), sharex=True,
         gridspec_kw={"hspace": 0.05, "height_ratios": [1.45, 1]},
@@ -1086,14 +1144,6 @@ def plot_germany_series(
     fig.patch.set_facecolor("white")
     fig.suptitle(title, fontsize=11, fontweight="bold", y=0.98)
 
-    OBS_COL = "#1b7837"    # E-OBS: dark green
-    MOD_COL = "#b2182b"    # ICON-CLM: dark red
-
-    years    = obs_series["year"].values.astype(int)
-    obs_vals = obs_series.values.astype(float)
-    mod_vals = model_series.values.astype(float)
-
-    # ── Top panel: absolute annual values ────────────────────────────────────
     for vals, col, lbl in [
         (obs_vals, OBS_COL, "E-OBS"),
         (mod_vals, MOD_COL, "ICON-CLM"),
@@ -1126,7 +1176,6 @@ def plot_germany_series(
     ax1.text(0.005, 0.98, "(a)", transform=ax1.transAxes,
              fontsize=10, fontweight="bold", va="top")
 
-    # ── Bottom panel: anomalies ───────────────────────────────────────────────
     anom_yrs = obs_anom["year"].values.astype(int)
     obs_a    = obs_anom.values.astype(float)
     mod_a    = model_anom.values.astype(float)
@@ -1136,7 +1185,6 @@ def plot_germany_series(
              fontsize=6.5, color="0.55", style="italic", zorder=1)
     ax2.axhline(0, color="0.35", lw=0.80, zorder=1)
 
-    # E-OBS sign-coloured bars
     bar_w   = 0.42
     obs_pos = np.where(obs_a >= 0, obs_a, 0.0)
     obs_neg = np.where(obs_a < 0,  obs_a, 0.0)
@@ -1144,12 +1192,9 @@ def plot_germany_series(
             color="#d73027", alpha=0.78, label="E-OBS +anom", zorder=2)
     ax2.bar(anom_yrs - bar_w / 2, obs_neg, bar_w,
             color="#4575b4", alpha=0.78, label="E-OBS −anom", zorder=2)
-
-    # ICON-CLM: dark grey step plot (rectangular appearance)
     ax2.plot(anom_yrs, mod_a, color="0.25", lw=1.0,
              drawstyle="steps-mid", label="ICON-CLM", zorder=4)
 
-    # E-OBS 10-yr running mean (bold green)
     s_obs_a  = pd.Series(obs_a, index=anom_yrs, dtype=float)
     rm10_obs = s_obs_a.rolling(10, center=True, min_periods=5).mean()
     ax2.plot(anom_yrs, rm10_obs.values, "-", color=OBS_COL, lw=2.0,
