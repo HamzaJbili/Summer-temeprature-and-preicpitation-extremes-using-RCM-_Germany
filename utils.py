@@ -116,8 +116,15 @@ def _auto_scale_palette(data_arr, base_levels, base_colors):
     margin = span * 0.08
     nice   = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
     if len(nice) >= 3:
-        n_new  = len(nice) - 1
-        colors = _interp_colors(colors, n_new)   # full palette → max contrast per panel
+        n_new = len(nice) - 1
+        if base_is_div and not is_diverging:
+            center = len(colors) // 2
+            # Include the neutral white (center-1) so the low end is visible,
+            # but stay on the correct half — no misleading blue for warm trends
+            sub    = colors[center - 1:] if p98 > 0 else colors[:center + 2]
+            colors = _interp_colors(sub, n_new)
+        else:
+            colors = _interp_colors(colors, n_new)
         levels = nice
     cmap = mcolors.ListedColormap(colors)
     norm = mcolors.BoundaryNorm(levels, cmap.N)
