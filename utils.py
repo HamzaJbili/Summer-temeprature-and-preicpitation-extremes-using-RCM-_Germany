@@ -119,9 +119,8 @@ def _auto_scale_palette(data_arr, base_levels, base_colors):
         n_new = len(nice) - 1
         if base_is_div and not is_diverging:
             center = len(colors) // 2
-            # Include the neutral white (center-1) so the low end is visible,
-            # but stay on the correct half — no misleading blue for warm trends
-            sub    = colors[center - 1:] if p98 > 0 else colors[:center + 2]
+            # ~2 blue bands at the low end for contrast, then white → warm
+            sub    = colors[center - 3:] if p98 > 0 else colors[:center + 4]
             colors = _interp_colors(sub, n_new)
         else:
             colors = _interp_colors(colors, n_new)
