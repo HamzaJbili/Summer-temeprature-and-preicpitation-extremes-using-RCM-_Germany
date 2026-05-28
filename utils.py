@@ -86,6 +86,8 @@ def _auto_scale_palette(data_arr, base_levels, base_colors):
     valid = valid[np.isfinite(valid)]
     if len(valid) <= 10:
         cmap = mcolors.ListedColormap(colors)
+        cmap.set_under(colors[0])
+        cmap.set_over(colors[-1])
         norm = mcolors.BoundaryNorm(levels, cmap.N)
         return levels, colors, cmap, norm
     p2, p98      = np.percentile(valid, 2), np.percentile(valid, 98)
@@ -125,6 +127,8 @@ def _auto_scale_palette(data_arr, base_levels, base_colors):
             colors = _interp_colors(colors, n_new)
         levels = nice
     cmap = mcolors.ListedColormap(colors)
+    cmap.set_under(colors[0])
+    cmap.set_over(colors[-1])
     norm = mcolors.BoundaryNorm(levels, cmap.N)
     return levels, colors, cmap, norm
 
@@ -877,6 +881,8 @@ def plot_obs_bias_maps(
         base_is_div = min(base_levels) < 0 < max(base_levels)
         if len(valid) <= 10:
             cmap = mcolors.ListedColormap(base_colors)
+            cmap.set_under(base_colors[0])
+            cmap.set_over(base_colors[-1])
             norm = mcolors.BoundaryNorm(base_levels, cmap.N)
             return list(base_levels), list(base_colors), cmap, norm
         p2, p98  = np.percentile(valid, 2), np.percentile(valid, 98)
@@ -926,6 +932,8 @@ def plot_obs_bias_maps(
             colors = list(base_colors)
             levels = list(base_levels)
         cmap = mcolors.ListedColormap(colors)
+        cmap.set_under(colors[0])
+        cmap.set_over(colors[-1])
         norm = mcolors.BoundaryNorm(levels, cmap.N)
         return levels, colors, cmap, norm
 
