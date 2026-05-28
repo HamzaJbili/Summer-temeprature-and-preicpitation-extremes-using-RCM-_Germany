@@ -137,7 +137,6 @@ for d in [FIGDIR, TABDIR, NCDIR]:
 HW_MIN_LEN = 3   # minimum consecutive T95 days required to define a heatwave
 
 # ── IPCC-standard colormap palettes ───────────────────────────────────────────
-# Temperature trend: blue (cooling) → white → red (warming)
 TEMP_COLORS = [
     "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#f7f7f7",
     "#fee0b6", "#fdb863", "#f4a582", "#d6604d", "#b2182b",
@@ -149,16 +148,31 @@ PREC_COLORS = [
     "#d8f0ed", "#a6dba0", "#5aae61", "#1b7837",
 ]
 
+# CDD drought palette: blue (fewer dry days) → amber → dark brown (more dry days)
+# Positive trend = more drought → warm brown/orange tones
+CDD_COLORS = [
+    "#4575b4",  # blue
+    "#91bfdb",  # light blue
+    "#e0f3f8",  # very light blue
+    "#ffffd4",  # pale yellow
+    "#fee391",  # warm yellow
+    "#fec44f",  # amber           (centre — positive = drought starts here)
+    "#fe9929",  # orange
+    "#ec7014",  # dark orange
+    "#cc4c02",  # brown-orange
+    "#8c2d04",  # dark brown
+    "#4d1c02",  # very dark brown
+]
+
 # ── Colormap level definitions (Theil-Sen slope, unit per decade) ──────────────
-# Ranges calibrated to observed/modelled summer trends in Germany;
-# contourf extend="both" gracefully handles out-of-range values.
 TEMP_LEVELS   = [-8, -6, -4, -2, -1,     0,    1,   2,    4,    6,    8]  # days/decade
-HW_LEVELS     = [-2.0, -1.5, -1.0, -0.5, -0.25, 0, 0.25, 0.5, 1.0, 1.5, 2.0]  # events/decade
-HWD_LEVELS    = [-3.0, -2.0, -1.5, -1.0, -0.5,  0,  0.5, 1.0, 1.5, 2.0, 3.0]  # days/decade
+HW_LEVELS     = [-2.0, -1.5, -1.0, -0.5, -0.25, 0, 0.25, 0.5, 1.0, 1.5, 2.0]
+HWD_LEVELS    = [-3.0, -2.0, -1.5, -1.0, -0.5,  0,  0.5, 1.0, 1.5, 2.0, 3.0]
 PREC_LEVELS   = [-8, -6, -4, -2, -1,     0,    1,   2,    4,    6,    8]  # days/decade
+CDD_LEVELS    = [-8, -6, -4, -2, -1,     0,    1,   2,    4,    6,    8]  # days/decade
 RX1DAY_LEVELS = [-5, -4, -3, -2, -1,     0,    1,   2,    3,    4,    5]  # mm/decade
 RX5DAY_LEVELS = [-10, -8, -6, -4, -2,    0,    2,   4,    6,    8,   10]  # mm/decade
-SDII_LEVELS   = [-1.0, -0.75, -0.5, -0.25, -0.1, 0, 0.1, 0.25, 0.5, 0.75, 1.0]  # mm/wd/decade
+SDII_LEVELS   = [-1.0, -0.75, -0.5, -0.25, -0.1, 0, 0.1, 0.25, 0.5, 0.75, 1.0]
 R95TOT_LEVELS = [-8, -6, -4, -2, -1,     0,    1,   2,    4,    6,    8]  # %/decade
 
 
@@ -557,7 +571,7 @@ if __name__ == "__main__":
         annual_model=t95_days_model, annual_obs=t95_days_obs,
         thr_model=t95_model,         thr_obs=t95_obs,
         unit="days summer⁻¹",        trend_unit="days decade⁻¹",
-        trend_levels=TEMP_LEVELS,    colors=TEMP_COLORS, tick_fmt="%.0f",
+        trend_levels=TEMP_LEVELS,    colors=TEMP_COLORS, tick_fmt="%.1f",
         gdf=gdf, geom=geom,
         summary_rows=summary_rows, overview_store=overview_store,
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
@@ -599,7 +613,7 @@ if __name__ == "__main__":
         annual_model=hwd_model, annual_obs=hwd_obs,
         thr_model=t95_model,    thr_obs=t95_obs,
         unit="days event⁻¹",    trend_unit="days event⁻¹ decade⁻¹",
-        trend_levels=HWD_LEVELS, colors=TEMP_COLORS, tick_fmt="%.1f",
+        trend_levels=HWD_LEVELS, colors=TEMP_COLORS, tick_fmt="%.2f",
         gdf=gdf, geom=geom,
         summary_rows=summary_rows, overview_store=overview_store,
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
@@ -627,7 +641,7 @@ if __name__ == "__main__":
         annual_model=r95_days_model, annual_obs=r95_days_obs,
         thr_model=r95_model,          thr_obs=r95_obs,
         unit="days summer⁻¹",         trend_unit="days decade⁻¹",
-        trend_levels=PREC_LEVELS,     colors=PREC_COLORS, tick_fmt="%.0f",
+        trend_levels=PREC_LEVELS,     colors=PREC_COLORS, tick_fmt="%.1f",
         gdf=gdf, geom=geom,
         summary_rows=summary_rows, overview_store=overview_store,
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
@@ -649,7 +663,7 @@ if __name__ == "__main__":
         annual_model=rx1_model, annual_obs=rx1_obs,
         thr_model=None,          thr_obs=None,
         unit="mm day⁻¹",         trend_unit="mm decade⁻¹",
-        trend_levels=RX1DAY_LEVELS, colors=PREC_COLORS, tick_fmt="%.0f",
+        trend_levels=RX1DAY_LEVELS, colors=PREC_COLORS, tick_fmt="%.1f",
         gdf=gdf, geom=geom,
         summary_rows=summary_rows, overview_store=overview_store,
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
@@ -672,7 +686,7 @@ if __name__ == "__main__":
         annual_model=rx5_model, annual_obs=rx5_obs,
         thr_model=None,          thr_obs=None,
         unit="mm",                trend_unit="mm decade⁻¹",
-        trend_levels=RX5DAY_LEVELS, colors=PREC_COLORS, tick_fmt="%.0f",
+        trend_levels=RX5DAY_LEVELS, colors=PREC_COLORS, tick_fmt="%.1f",
         gdf=gdf, geom=geom,
         summary_rows=summary_rows, overview_store=overview_store,
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
@@ -723,7 +737,7 @@ if __name__ == "__main__":
         annual_model=r95tot_model, annual_obs=r95tot_obs,
         thr_model=r95_model,        thr_obs=r95_obs,
         unit="%",                    trend_unit="% decade⁻¹",
-        trend_levels=R95TOT_LEVELS,  colors=PREC_COLORS, tick_fmt="%.0f",
+        trend_levels=R95TOT_LEVELS,  colors=PREC_COLORS, tick_fmt="%.1f",
         gdf=gdf, geom=geom,
         summary_rows=summary_rows, overview_store=overview_store,
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
@@ -748,11 +762,11 @@ if __name__ == "__main__":
 
     process_index(
         name="CDD",
-        long_name="CDD — Max consecutive dry days [days summer⁻¹]",
+        long_name="CDD — Consecutive dry days [days summer⁻¹]",
         annual_model=cdd_model, annual_obs=cdd_obs,
         thr_model=None,          thr_obs=None,
         unit="days summer⁻¹",    trend_unit="days decade⁻¹",
-        trend_levels=PREC_LEVELS, colors=PREC_COLORS, tick_fmt="%.0f",
+        trend_levels=CDD_LEVELS, colors=CDD_COLORS, tick_fmt="%.2f",
         gdf=gdf, geom=geom,
         summary_rows=summary_rows, overview_store=overview_store,
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,

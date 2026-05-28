@@ -1115,9 +1115,7 @@ def plot_germany_series(
                 mean_y    = np.mean(vals[valid])
                 intercept = mean_y - slope_yr * mean_x
                 trend     = intercept + slope_yr * years
-                p         = stats["mk_p"]
-                sig_str   = "**" if p < 0.01 else ("*" if p < 0.05 else "")
-                slope_str = (f"{slope_yr * 10:+.3f} {ylabel} dec⁻¹{sig_str}")
+                slope_str = f"{slope_yr * 10:+.3f} {ylabel} dec⁻¹"
                 ax.plot(years, trend, "--", color=col, lw=2.0, alpha=0.95,
                         label=f"{lbl}: {slope_str}", zorder=4)
 
@@ -1340,26 +1338,14 @@ def plot_precipitation_overview(index_meta, gdf, geom, outfile):
 def taylor_diagram(obs_dict, mod_dict, outfile,
                    title="Model Skill — ICON-CLM vs E-OBS (Germany average)"):
     """
-    Taylor diagram comparing ICON-CLM to E-OBS for all extreme indices.
+    Taylor diagram (Taylor 2001) in Cartesian coordinates.
 
-    Each point represents one index and is placed at:
-    - Angular position: correlation coefficient r (θ = arccos r)
-    - Radial position:  normalised standard deviation σ_model / σ_obs
-    Centred RMSE contours (arcs from the reference point) are also drawn.
-
-    The reference point (obs) sits at (θ=0°, r_norm=1.0).
-    A perfect model would coincide with the reference point.
-
-    Parameters
-    ----------
-    obs_dict : dict {index_name: np.ndarray}
-        Germany-average annual observed series for each index.
-    mod_dict : dict {index_name: np.ndarray}
-        Corresponding ICON-CLM series.
-    outfile  : str — output path.
-    title    : str — figure title.
+    Mapping: x = σ_norm · r,  y = σ_norm · √(1 − r²)
+    so the x-axis and y-axis are both labelled "Standard Deviation (normalised)".
+    The reference point (E-OBS) sits at (1, 0); a perfect model coincides with it.
+    Standard deviation arcs (dashed circles from origin) and RMSE arcs (dotted
+    circles centred at the reference point) are drawn in the first quadrant.
     """
-    # ── Compute per-index statistics ──────────────────────────────────────────
     names, corrs, norm_stds = [], [], []
     for name, obs_vals in obs_dict.items():
         mod_vals = mod_dict.get(name)
@@ -1384,74 +1370,97 @@ def taylor_diagram(obs_dict, mod_dict, outfile,
         warnings.warn("taylor_diagram: no valid index pairs found; skipping.")
         return
 
-    # ── Build polar plot ──────────────────────────────────────────────────────
-    fig, ax = plt.subplots(figsize=(7.0, 6.0),
-                           subplot_kw={"projection": "polar"})
+    max_std = min(max(max(norm_stds) * 1.15, 1.3), 2.5)
+    theta_q = np.linspace(0, np.pi / 2, 300)   # quarter-circle sweep
+
+    fig, ax = plt.subplots(figsize=(7.5, 6.5))
     fig.patch.set_facecolor("white")
+    ax.set_aspect("equal")
+    fig.suptitle(title, fontsize=9, fontweight="bold", y=1.00)
 
-    ax.set_theta_zero_location("N")   # θ=0 at top (r=1.0 = perfect correlation)
-    ax.set_theta_direction(-1)        # clockwise increasing θ
-    ax.set_thetamin(0)
-    ax.set_thetamax(180)
+    # ── Standard deviation arcs (dashed, from origin) ─────────────────────────
+    std_ticks = np.arange(0.5, max_std + 0.01, 0.5)
+    for r_std in std_ticks:
+        x_a = r_std * np.cos(theta_q)
+        y_a = r_std * np.sin(theta_q)
+        ax.plot(x_a, y_a, "--", color="0.72", lw=0.6, zorder=1)
+        ax.text(r_std, -0.07, f"{r_std:.1f}",
+                ha="center", va="top", fontsize=7, color="0.45")
 
-    # Draw std-dev reference arcs
-    for r_ref in [0.5, 1.0, 1.5, 2.0]:
-        arc = np.linspace(0, np.pi, 200)
-        ax.plot(arc, np.full_like(arc, r_ref), "--", color="0.72",
-                lw=0.55, zorder=1)
-        ax.text(np.pi * 0.80, r_ref + 0.04, f"{r_ref:.1f}",
-                fontsize=6.5, color="0.50", ha="center")
+    # ── RMSE arcs (dotted, centred at reference point (1, 0)) ─────────────────
+    rms_levels = [0.25, 0.5, 0.75, 1.0, 1.5]
+    for rms_v in rms_levels:
+        theta_r = np.linspace(0, 2 * np.pi, 600)
+        xr = 1.0 + rms_v * np.cos(theta_r)
+        yr = rms_v * np.sin(theta_r)
+        r_tot = np.sqrt(xr ** 2 + yr ** 2)
+        mask = (yr >= -0.01) & (xr >= -0.01) & (r_tot <= max_std * 1.02)
+        if mask.sum() < 3:
+            continue
+        ax.plot(xr[mask], yr[mask], ":", color="#d73027", lw=0.8, alpha=0.55,
+                zorder=1)
+        # Label near baseline (y≈0, rightmost point)
+        right_idx = np.where(mask & (yr >= 0) & (yr < 0.12))[0]
+        if len(right_idx):
+            xi, yi = xr[right_idx[-1]], yr[right_idx[-1]]
+            ax.text(xi + 0.03, yi + 0.01, f"{rms_v:.2g}",
+                    fontsize=6, color="#d73027", alpha=0.80, ha="left")
 
-    ax.text(np.pi * 0.80, 2.20, "Norm. Std Dev",
-            fontsize=7, color="0.45", ha="center")
+    ax.text(max_std * 0.92, max_std * 0.88, "RMSE\n(norm.)",
+            fontsize=7, color="#d73027", ha="right", alpha=0.75,
+            bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.7))
 
-    # Draw correlation radial lines and labels
-    for r_corr in [0.4, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]:
+    # ── Correlation radial lines ───────────────────────────────────────────────
+    for r_corr in [0.0, 0.4, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]:
         ang = np.arccos(r_corr)
-        ax.plot([ang, ang], [0, 2.05], ":", color="0.65", lw=0.5, zorder=1)
-        ax.text(ang, 2.15, f"{r_corr:.2f}", ha="center", va="bottom",
-                fontsize=6.5, color="0.50")
-    ax.text(np.arccos(0.4) / 2, 2.35, "Correlation",
-            fontsize=7, color="0.45", ha="center")
+        ax.plot([0, max_std * np.cos(ang)], [0, max_std * np.sin(ang)],
+                ":", color="0.65", lw=0.5, zorder=1)
+        lx = (max_std + 0.12) * np.cos(ang)
+        ly = (max_std + 0.12) * np.sin(ang)
+        ax.text(lx, ly, f"{r_corr:.2f}", ha="center", va="center",
+                fontsize=6.5, color="0.40",
+                rotation=-np.degrees(ang) + 90)
 
-    # RMSE contours centred on the reference point (1, 0)
-    theta_arc = np.linspace(0, np.pi, 400)
-    for rms_v in [0.5, 1.0, 1.5]:
-        # For a point at (theta, nstd): RMSE² = 1 + nstd² − 2·nstd·cos(theta)
-        # → nstd² − 2·cos(theta)·nstd + (1 − RMSE²) = 0
-        b = -2.0 * np.cos(theta_arc)
-        c = 1.0 - rms_v ** 2
-        discriminant = b ** 2 - 4.0 * c
-        r_arc = np.full_like(theta_arc, np.nan)
-        ok = discriminant >= 0
-        r_arc[ok] = (-b[ok] + np.sqrt(discriminant[ok])) / 2.0
-        r_arc[(r_arc < 0) | (r_arc > 2.5)] = np.nan
-        ax.plot(theta_arc, r_arc, ":", color="#d73027", lw=0.8, alpha=0.60)
-        mid = np.nanargmin(np.abs(theta_arc - np.pi / 5))
-        if np.isfinite(r_arc[mid]):
-            ax.text(theta_arc[mid], r_arc[mid] + 0.06,
-                    f"RMSE={rms_v:.1f}", fontsize=6, color="#d73027", alpha=0.80)
+    ax.text((max_std + 0.30) * np.cos(np.pi / 4),
+            (max_std + 0.30) * np.sin(np.pi / 4),
+            "Correlation", fontsize=8, color="0.35", ha="center", va="center",
+            rotation=45)
 
-    # Reference (obs) marker
-    ax.plot([0], [1.0], "*", color="0.20", ms=13, zorder=7,
+    # ── Reference (E-OBS) marker at (1, 0) ────────────────────────────────────
+    ax.plot([1.0], [0.0], "*", color="0.20", ms=14, zorder=8,
             markeredgecolor="k", markeredgewidth=0.5)
-    ax.text(0.07, 1.08, "E-OBS (ref.)", fontsize=7.5, color="0.25")
+    ax.text(1.04, 0.05, "E-OBS\n(ref.)", fontsize=7.5, color="0.25",
+            va="bottom")
 
-    # Model markers
+    # ── Model index markers ────────────────────────────────────────────────────
     palette = plt.cm.tab10(np.linspace(0, 1, len(names)))
-    for i, (name, theta, nstd) in enumerate(
-            zip(names, [np.arccos(c) for c in corrs], norm_stds)):
-        ax.plot(theta, nstd, "o", color=palette[i], ms=9, zorder=6,
+    for i, (name, corr, nstd) in enumerate(zip(names, corrs, norm_stds)):
+        ang = np.arccos(corr)
+        x = nstd * np.cos(ang)
+        y = nstd * np.sin(ang)
+        ax.plot(x, y, "o", color=palette[i], ms=9, zorder=7,
                 markeredgecolor="k", markeredgewidth=0.5)
-        short = name.replace("_exceedance_days", "").replace("_days", "")
-        ax.text(theta + 0.06, nstd + 0.07, short,
-                fontsize=7, ha="left", va="bottom", color=palette[i],
-                fontweight="bold")
+        short = (name.replace("_exceedance_days", "")
+                     .replace("_days", "")
+                     .replace("_number", "")
+                     .replace("_duration", ""))
+        ax.text(x + 0.04, y + 0.04, short,
+                fontsize=7.5, ha="left", va="bottom",
+                color=palette[i], fontweight="bold")
 
-    ax.set_rlim(0, 2.2)
-    ax.set_rticks([])
-    ax.set_title(title, fontsize=9, fontweight="bold", pad=20)
+    # ── Axes formatting ────────────────────────────────────────────────────────
+    ax.set_xlim(-0.08, max_std * 1.20)
+    ax.set_ylim(-0.18, max_std * 1.22)
+    ax.set_xlabel("Standard Deviation (normalised)", fontsize=9, labelpad=10)
+    ax.set_ylabel("Standard Deviation (normalised)", fontsize=9)
+    ax.axhline(0, color="0.45", lw=0.7, zorder=0)
+    ax.axvline(0, color="0.45", lw=0.7, zorder=0)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.tick_params(labelsize=8)
+    ax.grid(False)
 
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
 
@@ -1481,49 +1490,54 @@ def plot_trend_heatmap(heatmap_rows, outfile,
         trend_unit : str — unit string
     outfile : str
     """
-    n         = len(heatmap_rows)
-    names     = [d["name"] for d in heatmap_rows]
-    obs_sl    = np.array([d["obs_slope"]  for d in heatmap_rows], dtype=float)
-    mod_sl    = np.array([d["mod_slope"]  for d in heatmap_rows], dtype=float)
-    obs_pv    = np.array([d["obs_pval"]   for d in heatmap_rows], dtype=float)
-    mod_pv    = np.array([d["mod_pval"]   for d in heatmap_rows], dtype=float)
-    units     = [d["trend_unit"] for d in heatmap_rows]
+    n      = len(heatmap_rows)
+    obs_sl = np.array([d["obs_slope"]  for d in heatmap_rows], dtype=float)
+    mod_sl = np.array([d["mod_slope"]  for d in heatmap_rows], dtype=float)
+    obs_pv = np.array([d["obs_pval"]   for d in heatmap_rows], dtype=float)
+    mod_pv = np.array([d["mod_pval"]   for d in heatmap_rows], dtype=float)
 
     # Row-normalise so every index spans [−1, +1] in colour space
     maxabs = np.maximum(np.abs(obs_sl), np.abs(mod_sl))
     maxabs[maxabs < 1e-9] = 1.0
-    heat   = np.column_stack([obs_sl / maxabs, mod_sl / maxabs])  # (n, 2)
+    heat = np.column_stack([obs_sl / maxabs, mod_sl / maxabs])  # (n, 2)
 
-    fig_h  = max(4.0, 0.52 * n + 1.6)
-    fig, ax = plt.subplots(figsize=(5.0, fig_h))
+    # Row labels: "Index name  [unit]"
+    row_labels = [
+        f"{d['name']}  [{d['trend_unit']}]" for d in heatmap_rows
+    ]
+
+    fig_h  = max(4.5, 0.60 * n + 1.8)
+    fig, ax = plt.subplots(figsize=(7.5, fig_h))
     fig.patch.set_facecolor("white")
 
     im = ax.imshow(heat, cmap="RdBu_r", vmin=-1.0, vmax=1.0, aspect="auto")
 
-    # Annotate each cell with the actual trend value and significance
+    # Cell annotation: value + significance only (no units — those are in row labels)
     for i in range(n):
         for j, (sl, pv) in enumerate(
                 [(obs_sl[i], obs_pv[i]), (mod_sl[i], mod_pv[i])]):
-            sig = "**" if pv < 0.01 else ("*" if pv < 0.05 else "")
-            cell_val = heat[i, j]
-            txt_col  = "white" if abs(cell_val) > 0.60 else "black"
-            ax.text(j, i,
-                    f"{sl:+.2f}{sig}\n{units[i]}",
-                    ha="center", va="center", fontsize=7.5,
-                    color=txt_col, fontweight="bold" if sig else "normal")
+            sig      = "**" if pv < 0.01 else ("*" if pv < 0.05 else "")
+            txt_col  = "white" if abs(heat[i, j]) > 0.60 else "black"
+            ax.text(j, i, f"{sl:+.2f}{sig}",
+                    ha="center", va="center", fontsize=9.5,
+                    color=txt_col,
+                    fontweight="bold" if sig else "normal")
 
     ax.set_xticks([0, 1])
-    ax.set_xticklabels(["E-OBS", "ICON-CLM"], fontsize=10, fontweight="bold")
+    ax.set_xticklabels(["E-OBS", "ICON-CLM"], fontsize=11, fontweight="bold")
+    ax.xaxis.set_ticks_position("top")
+    ax.xaxis.set_label_position("top")
     ax.set_yticks(range(n))
-    ax.set_yticklabels(names, fontsize=8.5)
-    ax.set_title(f"{title}\n(* p<0.05, ** p<0.01 — Mann-Kendall, Yue-Wang correction)",
-                 fontsize=9, fontweight="bold", pad=6)
+    ax.set_yticklabels(row_labels, fontsize=8.5)
+    ax.set_title(
+        f"{title}\n(* p<0.05, ** p<0.01 — Mann-Kendall, Yue-Wang correction)",
+        fontsize=9, fontweight="bold", pad=28)
     ax.tick_params(axis="both", which="both", length=0)
     for sp in ax.spines.values():
         sp.set_visible(False)
 
     cb = fig.colorbar(im, ax=ax, orientation="vertical",
-                      fraction=0.040, pad=0.04, shrink=0.85)
+                      fraction=0.035, pad=0.03, shrink=0.80)
     cb.set_label("Row-normalised trend", fontsize=8)
     cb.ax.tick_params(labelsize=7.5)
 
