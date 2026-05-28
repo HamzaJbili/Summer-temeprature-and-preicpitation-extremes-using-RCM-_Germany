@@ -753,7 +753,6 @@ def plot_paired_trend_maps(
     PC   = ccrs.PlateCarree()
     PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
 
-    # Template palette kept unchanged; each panel gets its own independent scale
     levels_base = list(levels)
     colors_base = list(colors)
 
@@ -767,12 +766,16 @@ def plot_paired_trend_maps(
                   left=0.03, right=0.93, top=0.91, bottom=0.04,
                   wspace=0.0)
 
+    # Shared scale — pool both panels so the comparison is scientifically valid
+    combined = np.concatenate([obs_slope.values.ravel(), model_slope.values.ravel()])
+    lvls_shared, _, cmap_shared, norm_shared = _auto_scale_palette(
+        combined, levels_base, colors_base)
+
     for i, (slope, pval, ds_title, panel_label) in enumerate([
         (obs_slope,   obs_pval,   title_obs,   "(a)"),
         (model_slope, model_pval, title_model, "(b)"),
     ]):
-        # Independent auto-scale to this panel's own data range
-        lvls, _, cmap, norm = _auto_scale_palette(slope.values, levels_base, colors_base)
+        lvls, cmap, norm = lvls_shared, cmap_shared, norm_shared
 
         ax = fig.add_subplot(gs[0, 0 if i == 0 else 2], projection=PROJ)
         ax.set_extent(MAP_EXTENT, crs=PC)
