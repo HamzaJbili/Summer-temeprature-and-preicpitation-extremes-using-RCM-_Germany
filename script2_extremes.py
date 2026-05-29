@@ -138,6 +138,7 @@ for d in [FIGDIR, TABDIR, NCDIR]:
     os.makedirs(d, exist_ok=True)
 
 HW_MIN_LEN = 3   # minimum consecutive T90p days required to define a heatwave
+JJA_NDAYS  = 92  # June (30) + July (31) + August (31) — constant every year
 
 # ── IPCC-standard colormap palettes ───────────────────────────────────────────
 TEMP_COLORS = [
@@ -561,20 +562,27 @@ if __name__ == "__main__":
     # ══════════════════════════════════════════════════════════════════════════
     print("\n=== Temperature Indices ===")
 
-    # ── T90p: Hot days (Tmean > local 90th pct) ───────────────────────────────
-    print("T90p: computing annual hot-day counts …")
+    # ── T90p: Hot days (Tmean > local 90th pct) — expressed as % of JJA days ──
+    # ETCCDI convention: TX90p / TN90p are defined as "percentage of days
+    # exceeding the percentile".  Dividing by the fixed JJA length (92 days)
+    # makes the index season-length-independent and directly comparable to
+    # published TX90p figures.  By definition ~10 % of days exceed in the
+    # 1961-1990 reference period; the trend is in % decade⁻¹.
+    print("T90p: computing annual hot-day counts → % of JJA days …")
     t90_days_model = annual_exceedance_days(tas_model, t90_model)
     t90_days_obs   = annual_exceedance_days(tas_obs,   t90_obs)
-    save_index(t90_days_model, "T90p_days", "ICON")
-    save_index(t90_days_obs,   "T90p_days", "EOBS")
+    t90_pct_model  = (t90_days_model / JJA_NDAYS * 100.0).astype(np.float32)
+    t90_pct_obs    = (t90_days_obs   / JJA_NDAYS * 100.0).astype(np.float32)
+    save_index(t90_pct_model, "T90p_pct", "ICON")
+    save_index(t90_pct_obs,   "T90p_pct", "EOBS")
 
     process_index(
-        name="T90p_exceedance_days",
-        long_name="T90p — Hot days > 90th pct Tmean [days summer⁻¹]",
-        annual_model=t90_days_model, annual_obs=t90_days_obs,
-        thr_model=t90_model,         thr_obs=t90_obs,
-        unit="days summer⁻¹",        trend_unit="days decade⁻¹",
-        trend_levels=TEMP_LEVELS,    colors=TEMP_COLORS, tick_fmt="%.1f",
+        name="T90p_exceedance_pct",
+        long_name="T90p — Hot days > 90th pct Tmean [% of JJA days]",
+        annual_model=t90_pct_model, annual_obs=t90_pct_obs,
+        thr_model=t90_model,        thr_obs=t90_obs,
+        unit="% of JJA days",       trend_unit="% decade⁻¹",
+        trend_levels=TEMP_LEVELS,   colors=TEMP_COLORS, tick_fmt="%.2f",
         gdf=gdf, geom=geom,
         summary_rows=summary_rows, overview_store=overview_store,
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
@@ -814,7 +822,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 66)
     print("Script 2 complete.")
     print(f"  Individual figures  → {FIGDIR}/")
-    for idx in ["T90p_exceedance_days", "Heatwave_number", "Heatwave_duration",
+    for idx in ["T90p_exceedance_pct", "Heatwave_number", "Heatwave_duration",
                 "R95p_exceedance_days", "Rx1day", "Rx5day",
                 "SDII", "R95pTOT", "CDD"]:
         print(f"    {idx}_trend_map.png")
