@@ -8,8 +8,8 @@ Indices computed (9 total)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
   Temperature (3)
   ┌─────────────────────────────────────────────────────────────────────────┐
-  │ T95     Hot days exceeding the local 95th-pct JJA Tmean (1961-1990)    │
-  │ HWN     Heatwave Number: events of ≥3 consecutive T95 days             │
+  │ T90p    Hot days exceeding the local 90th-pct JJA Tmean (1961-1990)    │
+  │ HWN     Heatwave Number: events of ≥3 consecutive T90p days            │
   │ HWD     Heatwave Duration: mean length of heatwave events (days/event) │
   └─────────────────────────────────────────────────────────────────────────┘
 
@@ -37,10 +37,13 @@ Index selection rationale
   the highest signal-to-noise ratio, clearest physical interpretation, and
   greatest relevance to Germany's documented summer hazards.
 
-  Temperature: T95 quantifies raw hot-day frequency; HWN counts distinct
-  heatwave events; HWD measures mean event length.  Together they describe
-  the full hazard profile: a doubling of both HWN and HWD implies four times
-  more heatwave exposure per season than if frequency alone doubled.
+  Temperature: T90p quantifies raw hot-day frequency using the 90th percentile
+  threshold — more sensitive to moderate heat extremes than T95 and therefore
+  more informative for early-period trends when intense heatwaves were rare;
+  HWN counts distinct heatwave events; HWD measures mean event length.
+  Together they describe the full hazard profile: a doubling of both HWN and
+  HWD implies four times more heatwave exposure per season than if frequency
+  alone doubled.
 
   Heavy precipitation: R95p captures how often extreme rainfall occurs
   relative to the historical wet-day distribution; Rx1day and Rx5day capture
@@ -134,7 +137,7 @@ NCDIR  = os.path.join("output_extremes", "netcdf")   # annual index NetCDFs
 for d in [FIGDIR, TABDIR, NCDIR]:
     os.makedirs(d, exist_ok=True)
 
-HW_MIN_LEN = 3   # minimum consecutive T95 days required to define a heatwave
+HW_MIN_LEN = 3   # minimum consecutive T90p days required to define a heatwave
 
 # ── IPCC-standard colormap palettes ───────────────────────────────────────────
 TEMP_COLORS = [
@@ -213,7 +216,7 @@ def annual_exceedance_days(daily_jja, threshold):
     """
     Count JJA days per year that exceed a spatially-varying threshold.
 
-    Used for T95 (hot days above the local 95th-percentile Tmean) and for
+    Used for T90p (hot days above the local 90th-percentile Tmean) and for
     precipitation exceedance indices (R95p, R99p).  The threshold is
     computed once from the 1961-1990 reference period so that any trend in
     exceedance counts reflects genuine climate change.
@@ -262,7 +265,7 @@ def annual_heatwave_number(daily_jja, threshold):
     HWN — Count of heatwave events per JJA season at each grid cell.
 
     A heatwave event is defined as a run of ≥ HW_MIN_LEN (3) consecutive
-    days with Tmean > local T95 threshold (1961-1990).  Using Tmean rather
+    days with Tmean > local T90p threshold (1961-1990).  Using Tmean rather
     than Tmax captures the integrated thermal load (overnight as well as
     daytime heat), which is the physiologically relevant metric for heat-
     related mortality.
@@ -548,8 +551,8 @@ if __name__ == "__main__":
 
     # ── Pre-compute percentile thresholds (1961-1990 reference) ───────────────
     print("\nComputing percentile thresholds (1961-1990 reference) …")
-    t95_model = percentile_threshold(tas_model, 95)
-    t95_obs   = percentile_threshold(tas_obs,   95)
+    t90_model = percentile_threshold(tas_model, 90)
+    t90_obs   = percentile_threshold(tas_obs,   90)
     r95_model = percentile_threshold(pr_model,  95, wet_only=True)
     r95_obs   = percentile_threshold(pr_obs,    95, wet_only=True)
 
@@ -558,18 +561,18 @@ if __name__ == "__main__":
     # ══════════════════════════════════════════════════════════════════════════
     print("\n=== Temperature Indices ===")
 
-    # ── T95: Hot days (Tmean > local 95th pct) ────────────────────────────────
-    print("T95: computing annual hot-day counts …")
-    t95_days_model = annual_exceedance_days(tas_model, t95_model)
-    t95_days_obs   = annual_exceedance_days(tas_obs,   t95_obs)
-    save_index(t95_days_model, "T95_days", "ICON")
-    save_index(t95_days_obs,   "T95_days", "EOBS")
+    # ── T90p: Hot days (Tmean > local 90th pct) ───────────────────────────────
+    print("T90p: computing annual hot-day counts …")
+    t90_days_model = annual_exceedance_days(tas_model, t90_model)
+    t90_days_obs   = annual_exceedance_days(tas_obs,   t90_obs)
+    save_index(t90_days_model, "T90p_days", "ICON")
+    save_index(t90_days_obs,   "T90p_days", "EOBS")
 
     process_index(
-        name="T95_exceedance_days",
-        long_name="T95 — Hot days > 95th pct Tmean [days summer⁻¹]",
-        annual_model=t95_days_model, annual_obs=t95_days_obs,
-        thr_model=t95_model,         thr_obs=t95_obs,
+        name="T90p_exceedance_days",
+        long_name="T90p — Hot days > 90th pct Tmean [days summer⁻¹]",
+        annual_model=t90_days_model, annual_obs=t90_days_obs,
+        thr_model=t90_model,         thr_obs=t90_obs,
         unit="days summer⁻¹",        trend_unit="days decade⁻¹",
         trend_levels=TEMP_LEVELS,    colors=TEMP_COLORS, tick_fmt="%.1f",
         gdf=gdf, geom=geom,
@@ -578,10 +581,10 @@ if __name__ == "__main__":
         heatmap_rows=heatmap_rows,
     )
 
-    # ── HWN: Heatwave Number (≥3 consecutive T95 days) ───────────────────────
+    # ── HWN: Heatwave Number (≥3 consecutive T90p days) ──────────────────────
     print("HWN: computing heatwave number (may take several minutes) …")
-    hwn_model = annual_heatwave_number(tas_model, t95_model)
-    hwn_obs   = annual_heatwave_number(tas_obs,   t95_obs)
+    hwn_model = annual_heatwave_number(tas_model, t90_model)
+    hwn_obs   = annual_heatwave_number(tas_obs,   t90_obs)
     save_index(hwn_model, "HWN", "ICON")
     save_index(hwn_obs,   "HWN", "EOBS")
 
@@ -589,7 +592,7 @@ if __name__ == "__main__":
         name="Heatwave_number",
         long_name="HWN — Heatwave Number [events summer⁻¹]",
         annual_model=hwn_model, annual_obs=hwn_obs,
-        thr_model=t95_model,    thr_obs=t95_obs,
+        thr_model=t90_model,    thr_obs=t90_obs,
         unit="events summer⁻¹", trend_unit="events decade⁻¹",
         trend_levels=HW_LEVELS, colors=TEMP_COLORS, tick_fmt="%.2f",
         gdf=gdf, geom=geom,
@@ -602,8 +605,8 @@ if __name__ == "__main__":
     # Computed from the same hot-day binary mask as HWN but averaging event
     # lengths instead of counting events.  Seasons with no heatwave are NaN.
     print("HWD: computing mean heatwave duration (may take several minutes) …")
-    hwd_model = annual_hwd(tas_model, t95_model)
-    hwd_obs   = annual_hwd(tas_obs,   t95_obs)
+    hwd_model = annual_hwd(tas_model, t90_model)
+    hwd_obs   = annual_hwd(tas_obs,   t90_obs)
     save_index(hwd_model, "HWD", "ICON")
     save_index(hwd_obs,   "HWD", "EOBS")
 
@@ -611,7 +614,7 @@ if __name__ == "__main__":
         name="Heatwave_duration",
         long_name="HWD — Mean Heatwave Duration [days event⁻¹]",
         annual_model=hwd_model, annual_obs=hwd_obs,
-        thr_model=t95_model,    thr_obs=t95_obs,
+        thr_model=t90_model,    thr_obs=t90_obs,
         unit="days event⁻¹",    trend_unit="days event⁻¹ decade⁻¹",
         trend_levels=HWD_LEVELS, colors=TEMP_COLORS, tick_fmt="%.2f",
         gdf=gdf, geom=geom,
@@ -811,7 +814,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 66)
     print("Script 2 complete.")
     print(f"  Individual figures  → {FIGDIR}/")
-    for idx in ["T95_exceedance_days", "Heatwave_number", "Heatwave_duration",
+    for idx in ["T90p_exceedance_days", "Heatwave_number", "Heatwave_duration",
                 "R95p_exceedance_days", "Rx1day", "Rx5day",
                 "SDII", "R95pTOT", "CDD"]:
         print(f"    {idx}_trend_map.png")
