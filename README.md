@@ -68,10 +68,14 @@ this dataset.
 
 | Index | Definition | Threshold / method | Hazard relevance |
 |---|---|---|---|
-| **T95** | JJA days with Tmean > local 95th pct | 95th pct JJA Tmean, 1961–1990 | Hot-day frequency |
-| **HWN** | Number of heatwave events (≥ 3 consecutive T95 days) | T95 | Persistent heat — frequency |
-| **HWD** | Mean heatwave event duration (days event⁻¹) | T95; computed from same runs as HWN | Persistent heat — severity |
+| **T90p** | JJA days with Tmean > local 90th pct | 90th pct JJA Tmean, 1961–1990 | Hot-day frequency |
+| **HWN** | Number of heatwave events (≥ 3 consecutive T90p days) | T90p | Persistent heat — frequency |
+| **HWD** | Mean heatwave event duration (days event⁻¹) | T90p; computed from same runs as HWN | Persistent heat — severity |
 
+The 90th percentile (≈ 9 hot days per summer in 1961–1990) follows the ETCCDI
+convention for percentile-based warm-day indices (cf. TX90p/TN90p) and is more
+sensitive to moderate heat extremes than the 95th, giving better-populated
+heatwave maps and continuous Germany-average series.
 Together, HWN × HWD describes total heatwave exposure per season (comparable to
 a hazard dose); disentangling frequency from duration is essential for heat-mortality
 and energy-demand impact assessments.
