@@ -151,20 +151,20 @@ PREC_COLORS = [
     "#d8f0ed", "#a6dba0", "#5aae61", "#1b7837",
 ]
 
-# CDD drought palette: blue (fewer dry days) → amber → dark brown (more dry days)
-# Positive trend = more drought → warm brown/orange tones
+# CDD drought palette: blue (fewer dry days) → pale → dark brown (more dry days)
+# Positive trend = more drought → warm brown/orange tones.
+# NOTE: 10 colours for the 10 intervals defined by the 11-boundary CDD_LEVELS.
 CDD_COLORS = [
-    "#4575b4",  # blue
-    "#91bfdb",  # light blue
-    "#e0f3f8",  # very light blue
-    "#ffffd4",  # pale yellow
-    "#fee391",  # warm yellow
-    "#fec44f",  # amber           (centre — positive = drought starts here)
-    "#fe9929",  # orange
-    "#ec7014",  # dark orange
-    "#cc4c02",  # brown-orange
-    "#8c2d04",  # dark brown
-    "#4d1c02",  # very dark brown
+    "#4575b4",  # blue            (-8 .. -6)  strongly wetter
+    "#74add1",  # medium blue     (-6 .. -4)
+    "#abd9e9",  # light blue      (-4 .. -2)
+    "#e0f3f8",  # very light blue (-2 .. -1)
+    "#ffffd4",  # pale near-zero  (-1 ..  0)
+    "#fee391",  # warm yellow     ( 0 ..  1)  drought starts here
+    "#fec44f",  # amber           ( 1 ..  2)
+    "#fe9929",  # orange          ( 2 ..  4)
+    "#d95f0e",  # dark orange     ( 4 ..  6)
+    "#8c2d04",  # dark brown      ( 6 ..  8)  strongly drier
 ]
 
 # ── Colormap level definitions (Theil-Sen slope, unit per decade) ──────────────

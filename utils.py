@@ -409,6 +409,36 @@ def apply_mask(arr2d, mask2d):
     return out
 
 
+def clip_contourf(cf, ax, geom):
+    """
+    Clip a filled-contour set to a Shapely geometry on a plain (non-Cartopy) Axes.
+
+    Used by script3 driver-composite maps, which are drawn on ordinary
+    matplotlib Axes using lon/lat as data coordinates.  NaN-masking alone
+    leaves fill bleeding past the national border because contourf
+    interpolates across the boundary; setting an explicit clip path removes it.
+
+    Parameters
+    ----------
+    cf   : matplotlib QuadContourSet returned by ax.contourf(...)
+    ax   : the Axes the contour set was drawn on (data coords = lon/lat)
+    geom : Shapely Polygon / MultiPolygon (Germany boundary)
+    """
+    from matplotlib.patches import PathPatch
+    path  = _polygon_to_path(geom)
+    patch = PathPatch(path, transform=ax.transData,
+                      facecolor="none", edgecolor="none", zorder=0)
+    ax.add_patch(patch)
+    try:
+        # matplotlib >= 3.8: ContourSet is itself an Artist
+        cf.set_clip_path(patch)
+    except AttributeError:
+        # older matplotlib: clip each underlying collection
+        for coll in cf.collections:
+            coll.set_clip_path(patch)
+    return patch
+
+
 
 def interp_display(da2d, factor=DISPLAY_FACTOR):
     """
