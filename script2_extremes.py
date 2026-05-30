@@ -119,10 +119,10 @@ from utils import (
 set_ipcc_style()
 
 # ── file paths ─────────────────────────────────────────────────────────────────
-MODEL_T_FILE = "ICONCLM_tas_daily_1950_2022_0.25deg_Germany.nc"
-OBS_T_FILE   = "EOBS_tg_daily_1950_2022_0.25deg_Germany.nc"
-MODEL_P_FILE = "ICONCLM_pr_daily_1950_2022_0.25deg_Germany.nc"
-OBS_P_FILE   = "EOBS_rr_daily_1950_2022_0.25deg_Germany.nc"
+MODEL_T_FILE = "Tas_degrees_DE-0.25_ERA5_JJA_evaluation_r1i1p1f1_CLMcom-Hereon_ICON-CLM-202407-1-1_v1-r2_day_1950-2022.nc"
+OBS_T_FILE   = "tg_JJA_eobs_dd_0.25deg_reg_v28.0e.nc"
+MODEL_P_FILE = "TOT_PREC_DE-0.25_ERA5_JJA_evaluation_r1i1p1f1_CLMcom-Hereon_ICON-CLM-202407-1-1_v1-r2_day_1950-2022.nc"
+OBS_P_FILE   = "rr_JJA_eobs_dd_0.25deg_reg_v28.0e.nc"
 GERMANY_SHP  = "/work/jbiliham/shapefile_Germany/gadm41_DEU_0.shp"
 
 FIGDIR = os.path.join("output_extremes", "figures")
@@ -519,9 +519,9 @@ if __name__ == "__main__":
 
     # ── Load daily data ───────────────────────────────────────────────────────
     print("Loading daily temperature and precipitation data …")
-    tas_model = keep_jja(load_field(MODEL_T_FILE, "tas"))
+    tas_model = keep_jja(load_field(MODEL_T_FILE, "Tas"))
     tas_obs   = keep_jja(load_field(OBS_T_FILE,   "tg"))
-    pr_model  = keep_jja(load_field(MODEL_P_FILE, "pr"))
+    pr_model  = keep_jja(load_field(MODEL_P_FILE, "p"))
     pr_obs    = keep_jja(load_field(OBS_P_FILE,   "rr"))
 
     # Shared data stores for the summary figures generated at the end
