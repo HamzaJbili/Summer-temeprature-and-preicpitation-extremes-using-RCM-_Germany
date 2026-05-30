@@ -101,7 +101,7 @@ from utils import (
     taylor_diagram, plot_trend_heatmap,
     plot_climatology_maps,
     # constants
-    REF_START, REF_END, ANOM_START, ANOM_END, DPI, DRY_DAY_MAX,
+    REF_START, REF_END, ANOM_START, ANOM_END, DPI, DRY_DAY_MAX, DIFF_COLORS,
 )
 
 # Apply IPCC publication style to all matplotlib figures in this script
@@ -207,10 +207,7 @@ T90P_DIST_LEVELS = [5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 18]  # days summer⁻¹
 # Using explicit fixed levels (not auto-scaled) ensures that coastal outlier
 # cells do not distort the colour scale over the German interior.
 # Adjust after first run if needed; extend="both" clips values outside the range.
-BIAS_DIV_COLORS = [
-    "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#f7f7f7",
-    "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f",
-]
+BIAS_DIV_COLORS = DIFF_COLORS   # same universal blue-white-red for all bias panels
 T90P_DIST_BIAS_LEVELS = [-4, -3, -2, -1, -0.5, 0, 0.5, 1, 2, 3, 4]   # days summer⁻¹
 T90P_THR_BIAS_LEVELS  = [-3, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 3]  # °C
 HWN_BIAS_LEVELS  = [-0.6, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.6]
@@ -447,6 +444,9 @@ def process_index(
     trend_model = compute_trend_maps(annual_model)
 
     # ── 1. Trend map: E-OBS | Diff (ICON − E-OBS) ────────────────────────────
+    # diff_colors uses the universal blue-white-red palette so the Diff panel
+    # is visually distinct from the index-specific E-OBS palette, regardless
+    # of whether both panels end up on the same numeric scale.
     plot_obs_bias_maps(
         obs_slope   = trend_obs["sen_slope"],
         model_slope = trend_model["sen_slope"],
@@ -455,6 +455,7 @@ def process_index(
         gdf=gdf, geom=geom,
         outfile     = os.path.join(FIGDIR, f"{name}_trend_map.png"),
         obs_levels  = trend_levels, obs_colors=colors,
+        diff_colors = DIFF_COLORS,
         cbar_label  = trend_unit, tick_fmt=tick_fmt,
         suptitle    = f"{long_name} — Theil-Sen Trend 1950–2022",
         obs_sequential=obs_sequential,

@@ -61,6 +61,16 @@ DISPLAY_FACTOR = 5        # bilinear upsampling factor for map display (visual o
 WET_DAY_MIN    = 1.0      # mm/day — wet-day threshold (SDII, CWD)
 DRY_DAY_MAX    = 1.0      # mm/day — dry-day threshold (Dry_days, CDD)
 
+# Standard diverging palette for Diff / Bias panels (blue–white–red).
+# Used universally across all trend-difference and climatology-bias maps so that
+# the reader can immediately distinguish an index-specific signal panel (left,
+# index colour palette) from a model-minus-obs difference panel (right, this
+# neutral palette).  Reference: EURO-CORDEX convention (Kotlarski et al. 2014).
+DIFF_COLORS = [
+    "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#f7f7f7",
+    "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f",
+]
+
 
 # ── Colorbar helpers ──────────────────────────────────────────────────────────
 def _interp_colors(palette, n):
