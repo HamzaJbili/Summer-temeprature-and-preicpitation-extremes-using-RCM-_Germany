@@ -68,7 +68,7 @@ INDICES = [
     ("Heatwave_number",      "HWN"),
     ("Heatwave_duration",    "HWD"),
     # Precipitation — heavy events
-    ("R95p_exceedance_days", "R95p_days"),
+    ("R10mm",                "R10mm"),
     ("Rx1day",               "Rx1day"),
     ("Rx5day",               "Rx5day"),
     ("SDII",                 "SDII"),

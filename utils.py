@@ -513,7 +513,7 @@ def plot_climatology_maps(obs_clim, mod_clim, gdf, geom, outfile,
 
     fig.patch.set_facecolor("white")
     if suptitle:
-        fig.suptitle(suptitle, fontsize=10, fontweight="bold", y=0.99)
+        fig.suptitle(suptitle, fontsize=10, fontweight="normal", y=0.99)
 
     panel_labels = ["(a)", "(b)", "(c)"]
     panel_titles = ["E-OBS", "ICON-CLM", "Bias (ICON − E-OBS)"]
@@ -808,7 +808,7 @@ def plot_paired_trend_maps(
     fig = plt.figure(figsize=(10.5, 5.5))
     fig.patch.set_facecolor("white")
     if suptitle:
-        fig.suptitle(suptitle, fontsize=11, fontweight="bold", y=0.99)
+        fig.suptitle(suptitle, fontsize=11, fontweight="normal", y=0.99)
 
     gs = GridSpec(1, 3, width_ratios=[1, 0.08, 1],
                   left=0.03, right=0.93, top=0.91, bottom=0.04,
