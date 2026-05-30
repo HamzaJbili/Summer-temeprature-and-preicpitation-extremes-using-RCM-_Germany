@@ -203,6 +203,21 @@ T90P_DIST_COLORS = [
 ]
 T90P_DIST_LEVELS = [5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 18]  # days summer⁻¹
 
+# ── Bias colorbar levels for climatology maps (ICON − E-OBS, explicit / fixed) ─
+# Using explicit fixed levels (not auto-scaled) ensures that coastal outlier
+# cells do not distort the colour scale over the German interior.
+# Adjust after first run if needed; extend="both" clips values outside the range.
+BIAS_DIV_COLORS = [
+    "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#f7f7f7",
+    "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f",
+]
+T90P_DIST_BIAS_LEVELS = [-4, -3, -2, -1, -0.5, 0, 0.5, 1, 2, 3, 4]   # days summer⁻¹
+T90P_THR_BIAS_LEVELS  = [-3, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 3]  # °C
+HWN_BIAS_LEVELS  = [-0.6, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.6]
+HWD_BIAS_LEVELS  = [-2.0, -1.5, -1.0, -0.5, -0.25, 0, 0.25, 0.5, 1.0, 1.5, 2.0]
+SDII_BIAS_LEVELS = [-2.0, -1.5, -1.0, -0.5, -0.25, 0, 0.25, 0.5, 1.0, 1.5, 2.0]
+CDD_BIAS_LEVELS  = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]             # days summer⁻¹
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  Threshold computation
@@ -582,7 +597,7 @@ if __name__ == "__main__":
         heatmap_rows=heatmap_rows,
     )
 
-    # ── T90p mean hot-day frequency (E-OBS | ICON-CLM | Bias) ────────────────
+    # ── T90p mean hot-day frequency (E-OBS | Bias) ───────────────────────────
     print("T90p: plotting mean hot-day frequency …")
     plot_climatology_maps(
         obs_clim = t90_days_obs.mean("year",   skipna=True),
@@ -591,12 +606,12 @@ if __name__ == "__main__":
         outfile  = os.path.join(FIGDIR, "T90p_exceedance_days_spatial_mean.png"),
         levels   = T90P_DIST_LEVELS, colors=T90P_DIST_COLORS,
         cbar_label = "T90p hot-day frequency [days summer⁻¹]", tick_fmt="%.0f",
-        suptitle = "T90p — Hot days > 90th pct Tmean [days summer⁻¹] — Mean 1950–2022",
+        suptitle = "T90p — Hot days > 90th pct Tmean — Mean 1950–2022",
+        bias_levels=T90P_DIST_BIAS_LEVELS, bias_colors=BIAS_DIV_COLORS,
+        bias_tick_fmt="%.1f",
     )
 
     # ── T90p threshold field (actual 90th-pct temperature values) ─────────────
-    # Shows the spatial pattern of the threshold itself (°C), i.e. how warm
-    # it needs to be at each grid cell to qualify as a "hot day".
     print("T90p: plotting 90th-pct temperature threshold field …")
     plot_climatology_maps(
         obs_clim = t90_obs,   mod_clim = t90_model,
@@ -605,6 +620,8 @@ if __name__ == "__main__":
         levels   = T90P_THR_LEVELS, colors=T90P_THR_COLORS,
         cbar_label = "90th-pct Tmean threshold [°C]", tick_fmt="%.1f",
         suptitle = "T90p threshold — 90th-pct JJA Tmean 1961–1990",
+        bias_levels=T90P_THR_BIAS_LEVELS, bias_colors=BIAS_DIV_COLORS,
+        bias_tick_fmt="%.2f",
     )
 
     # ── HWN: Heatwave Number (≥3 consecutive T90p days) ──────────────────────
@@ -634,6 +651,8 @@ if __name__ == "__main__":
         levels   = HWN_CLIM_LEVELS, colors=HWN_CLIM_COLORS,
         cbar_label = "HWN mean [events summer⁻¹]", tick_fmt="%.1f",
         suptitle = "HWN — Mean heatwave number 1950–2022",
+        bias_levels=HWN_BIAS_LEVELS, bias_colors=BIAS_DIV_COLORS,
+        bias_tick_fmt="%.2f",
     )
 
     # ── HWD: Heatwave Duration (mean days per heatwave event) ─────────────────
@@ -665,6 +684,8 @@ if __name__ == "__main__":
         levels   = HWD_CLIM_LEVELS, colors=HWD_CLIM_COLORS,
         cbar_label = "HWD mean [days event⁻¹]", tick_fmt="%.1f",
         suptitle = "HWD — Mean heatwave duration 1950–2022",
+        bias_levels=HWD_BIAS_LEVELS, bias_colors=BIAS_DIV_COLORS,
+        bias_tick_fmt="%.2f",
     )
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -702,6 +723,8 @@ if __name__ == "__main__":
         levels   = SDII_CLIM_LEVELS, colors=SDII_CLIM_COLORS,
         cbar_label = "SDII mean [mm wet-day⁻¹]", tick_fmt="%.1f",
         suptitle = "SDII — Mean daily intensity 1950–2022",
+        bias_levels=SDII_BIAS_LEVELS, bias_colors=BIAS_DIV_COLORS,
+        bias_tick_fmt="%.2f",
     )
 
     print("\n=== Precipitation Indices — Drought ===")
@@ -737,6 +760,8 @@ if __name__ == "__main__":
         levels   = CDD_CLIM_LEVELS, colors=CDD_CLIM_COLORS,
         cbar_label = "CDD mean [days summer⁻¹]", tick_fmt="%.0f",
         suptitle = "CDD — Mean max consecutive dry days 1950–2022",
+        bias_levels=CDD_BIAS_LEVELS, bias_colors=BIAS_DIV_COLORS,
+        bias_tick_fmt="%.1f",
     )
 
     # ── SPI: Standardised Precipitation Index (JJA seasonal total) ───────────

@@ -460,106 +460,137 @@ def interp_display(da2d, factor=DISPLAY_FACTOR):
 
 def plot_climatology_maps(obs_clim, mod_clim, gdf, geom, outfile,
                           levels, colors, cbar_label, tick_fmt="%.0f",
-                          suptitle=None):
+                          suptitle=None,
+                          bias_levels=None, bias_colors=None,
+                          bias_label=None, bias_tick_fmt="%.1f"):
     """
-    Three-panel figure: (a) E-OBS climatology, (b) ICON-CLM climatology,
-    (c) model bias (ICON minus E-OBS).
+    Two-panel figure: (a) E-OBS mean field, (b) Bias = ICON − E-OBS.
 
-    Designed for showing the mean-state spatial pattern alongside the
-    systematic model bias.  Panels (a) and (b) share one sequential colormap;
-    panel (c) uses a diverging colormap centred on zero.
+    The three-panel layout (E-OBS | ICON | Bias) was replaced with this two-panel
+    design because:
+      - E-OBS and Bias together carry the scientifically relevant comparison;
+        the ICON absolute-field panel adds no information beyond what the bias
+        already shows;
+      - The bias colorbar now uses explicit, user-specified levels (*bias_levels*)
+        rather than auto-scaling to the domain-wide maximum, which was dominated
+        by coastal edge-cells and hid the bias structure over the interior.
 
     Parameters
     ----------
     obs_clim, mod_clim : xr.DataArray (lat, lon)
-        1991-2020 climatological mean for E-OBS and ICON-CLM.
-    gdf  : GeoDataFrame
-    geom : Shapely geometry
-    outfile : str
-    levels  : list — sequential boundary levels for panels (a) and (b)
-    colors  : list — one colour per interval (len = len(levels)-1)
-    cbar_label : str — colorbar label including units
-    tick_fmt   : str — colorbar tick format
-    suptitle   : str, optional
+        Mean field for E-OBS and ICON-CLM (e.g. 1950-2022 climatology).
+    gdf, geom : Germany GeoDataFrame and Shapely geometry.
+    outfile   : str
+    levels    : list — sequential boundary levels for the E-OBS panel.
+    colors    : list — len = len(levels)-1, one colour per interval.
+    cbar_label : str — unit label for the E-OBS colorbar (e.g. "CDD mean [days]").
+    tick_fmt  : str — tick format for the E-OBS colorbar (default "%.0f").
+    suptitle  : str, optional
+    bias_levels : list — explicit symmetric diverging levels for the bias panel.
+        MUST be provided; passing None raises ValueError.  Supplying explicit
+        levels (not auto-scaled from data) is required for scientific rigour so
+        that coastal outlier cells do not distort the interior colour mapping.
+    bias_colors : list — len = len(bias_levels)-1.  Defaults to a standard
+        blue-white-red diverging palette if not given.
+    bias_label  : str — bias colorbar label.  Defaults to
+        "Bias (ICON − E-OBS) [<unit>]" derived from cbar_label.
+    bias_tick_fmt : str — tick format for the bias colorbar (default "%.1f").
     """
-    bias   = mod_clim - obs_clim
-    n_lvl  = len(levels)
-    maxabs = float(np.nanmax(np.abs(bias.values)))
-    if maxabs < 1e-6:
-        maxabs = 1.0
-    # Symmetric diverging levels for the bias panel
-    step     = maxabs / 5
-    bias_lvl = [round(-maxabs + k * step, 3) for k in range(11)]
-    bias_col = [
+    if bias_levels is None:
+        raise ValueError(
+            "plot_climatology_maps: bias_levels must be supplied explicitly. "
+            "Auto-scaling the bias colorbar to the domain maximum distorts the "
+            "colour mapping when coastal cells are outliers. Choose levels that "
+            "represent the range of the interior field."
+        )
+
+    _DEFAULT_BIAS_COLORS = [
         "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#f7f7f7",
         "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f",
     ]
+    if bias_colors is None:
+        n_intervals = len(bias_levels) - 1
+        bias_colors = _interp_colors(_DEFAULT_BIAS_COLORS, n_intervals)
+
+    if bias_label is None:
+        if "[" in cbar_label:
+            unit_str = cbar_label.split("[")[-1].rstrip("]")
+            bias_label = f"Bias (ICON − E-OBS) [{unit_str}]"
+        else:
+            bias_label = f"Bias (ICON − E-OBS) [{cbar_label}]"
+
+    bias = (mod_clim - obs_clim).astype(np.float32)
 
     PC   = ccrs.PlateCarree()
     PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
 
-    cmap_seq  = mcolors.ListedColormap(colors)
-    norm_seq  = mcolors.BoundaryNorm(levels, cmap_seq.N)
-    cmap_div  = mcolors.ListedColormap(bias_col)
-    norm_div  = mcolors.BoundaryNorm(bias_lvl, cmap_div.N)
+    cmap_obs  = mcolors.ListedColormap(colors)
+    cmap_obs.set_under(colors[0])
+    cmap_obs.set_over(colors[-1])
+    norm_obs  = mcolors.BoundaryNorm(levels, cmap_obs.N)
+
+    cmap_bias = mcolors.ListedColormap(bias_colors)
+    cmap_bias.set_under(bias_colors[0])
+    cmap_bias.set_over(bias_colors[-1])
+    norm_bias = mcolors.BoundaryNorm(bias_levels, cmap_bias.N)
 
     from matplotlib.gridspec import GridSpec
-    fig = plt.figure(figsize=(13.0, 5.2))
-    gs  = GridSpec(2, 3, height_ratios=[1, 0.07],
-                   left=0.04, right=0.98, top=0.92, bottom=0.04,
-                   hspace=0.10, wspace=0.15)
-    axes = [fig.add_subplot(gs[0, k], projection=PROJ) for k in range(3)]
-    caxs = [fig.add_subplot(gs[1, k]) for k in range(3)]
-
+    fig = plt.figure(figsize=(10.5, 5.2))
     fig.patch.set_facecolor("white")
     if suptitle:
-        fig.suptitle(suptitle, fontsize=10, fontweight="normal", y=0.99)
+        fig.suptitle(suptitle, fontsize=11, fontweight="normal", y=0.99)
 
-    panel_labels = ["(a)", "(b)", "(c)"]
-    panel_titles = ["E-OBS", "ICON-CLM", "Bias (ICON − E-OBS)"]
+    gs  = GridSpec(1, 3, width_ratios=[1, 0.08, 1],
+                   left=0.03, right=0.93, top=0.91, bottom=0.04,
+                   wspace=0.0)
+    axs = [fig.add_subplot(gs[0, 0], projection=PROJ),
+           fig.add_subplot(gs[0, 2], projection=PROJ)]
 
-    for k, (ax, cax, da, cmap, norm, lvls, title, plabel) in enumerate(zip(
-            axes, caxs,
-            [obs_clim, mod_clim, bias],
-            [cmap_seq, cmap_seq, cmap_div],
-            [norm_seq, norm_seq, norm_div],
-            [levels,   levels,   bias_lvl],
-            panel_titles, panel_labels,
-    )):
+    panels = [
+        dict(ax=axs[0], da=obs_clim, cmap=cmap_obs,  norm=norm_obs,
+             lvls=levels,      lbl=cbar_label, fmt=tick_fmt,  tag="(a)", title="E-OBS"),
+        dict(ax=axs[1], da=bias,     cmap=cmap_bias, norm=norm_bias,
+             lvls=bias_levels, lbl=bias_label, fmt=bias_tick_fmt, tag="(b)",
+             title="Bias (ICON − E-OBS)"),
+    ]
+
+    for p in panels:
+        ax = p["ax"]
         ax.set_extent(MAP_EXTENT, crs=PC)
         ax.set_facecolor("#d6e8f2")
         ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
         ax.add_feature(cfeature.BORDERS.with_scale("10m"),
                        linewidth=0.3, edgecolor="0.45", zorder=2)
 
-        fine = interp_display(da)
+        fine = interp_display(p["da"])
         mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
         arr  = apply_mask(fine.values, mask)
 
         ax.contourf(
             fine["lon"].values, fine["lat"].values, arr,
-            levels=lvls, cmap=cmap, norm=norm,
+            levels=p["lvls"], cmap=p["cmap"], norm=p["norm"],
             transform=PC, extend="both", antialiased=True, zorder=3,
         )
         ax.add_geometries(gdf.geometry, PC, facecolor="none",
                           edgecolor="black", linewidth=0.55, zorder=6)
-        ax.text(0.03, 0.97, plabel, transform=ax.transAxes,
+        ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
                 ha="left", va="top", fontsize=9, fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
-        ax.set_title(title, fontsize=9.5, fontweight="bold", pad=4)
+        ax.set_title(p["title"], fontsize=9.5, fontweight="bold", pad=4)
         style_axis(ax)
 
-        fmt   = tick_fmt if k < 2 else "%.2f"
-        ticks = [lvls[0], lvls[len(lvls)//2], lvls[-1]] if k == 2 else lvls
-        cb    = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
-                             ticks=ticks, orientation="horizontal", extend="both")
+        # Colorbar pinned directly below the map panel
+        ax_pos = ax.get_position()
+        cax = fig.add_axes([ax_pos.x0 + 0.01,
+                            ax_pos.y0 - 0.055,
+                            ax_pos.width - 0.02,
+                            0.022])
+        cb = ColorbarBase(cax, cmap=p["cmap"], norm=p["norm"],
+                          boundaries=p["lvls"], ticks=p["lvls"],
+                          orientation="horizontal", extend="both")
         cb.ax.tick_params(labelsize=6.5, pad=1.5)
-        cb.ax.xaxis.set_major_formatter(FormatStrFormatter(fmt))
-        if k == 1:
-            cb.set_label(cbar_label, fontsize=8, labelpad=3)
-        elif k == 2:
-            cb.set_label(f"Bias [{cbar_label.split('[')[-1].rstrip(']') if '[' in cbar_label else cbar_label}]",
-                         fontsize=8, labelpad=3)
+        cb.ax.xaxis.set_major_formatter(FormatStrFormatter(p["fmt"]))
+        cb.set_label(p["lbl"], fontsize=8, labelpad=3)
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
