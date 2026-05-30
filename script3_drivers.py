@@ -64,7 +64,7 @@ INDEX_NC_DIR = "output_extremes/netcdf"   # produced by script2
 # Both are listed; you can run one or both by setting DATASETS below.
 INDICES = [
     # Temperature extremes
-    ("T90p_exceedance_pct",  "T90p_pct"),
+    ("T90p_exceedance_days", "T90p_days"),
     ("Heatwave_number",      "HWN"),
     ("Heatwave_duration",    "HWD"),
     # Precipitation — heavy events

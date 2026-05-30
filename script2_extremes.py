@@ -84,8 +84,7 @@ Outputs per index
 
 Summary outputs (end of script)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  figures/  precipitation_overview.png  — all precipitation trends (one figure)
-            taylor_diagram.png          — model skill assessment
+  figures/  taylor_diagram.png          — model skill assessment
             trend_heatmap.png           — all-index trend summary
 
 Scientific references
@@ -118,7 +117,7 @@ from utils import (
     annual_sdii, annual_r95ptot, annual_r10mm,
     # visualisation
     set_ipcc_style, plot_paired_trend_maps, plot_germany_series,
-    plot_precipitation_overview, taylor_diagram, plot_trend_heatmap,
+    taylor_diagram, plot_trend_heatmap,
     plot_climatology_maps,
     # constants
     REF_START, REF_END, ANOM_START, ANOM_END, DPI, WET_DAY_MIN, DRY_DAY_MAX,
@@ -141,7 +140,6 @@ for d in [FIGDIR, TABDIR, NCDIR]:
     os.makedirs(d, exist_ok=True)
 
 HW_MIN_LEN = 3   # minimum consecutive T90p days required to define a heatwave
-JJA_NDAYS  = 92  # June (30) + July (31) + August (31) — constant every year
 
 # ── IPCC-standard colormap palettes ───────────────────────────────────────────
 TEMP_COLORS = [
@@ -184,12 +182,12 @@ R95TOT_LEVELS = [-8, -6, -4, -2, -1,     0,    1,   2,    4,    6,    8]  # %/de
 R10MM_LEVELS  = [-2.0, -1.5, -1.0, -0.5, -0.25, 0, 0.25, 0.5, 1.0, 1.5, 2.0]  # days/decade
 
 # Sequential warm palette + levels for the T90p mean spatial-distribution map
-# (climatological hot-day frequency, % of JJA days; not a trend → sequential)
+# (climatological hot-day frequency, days summer⁻¹; not a trend → sequential)
 T90P_DIST_COLORS = [
     "#ffffcc", "#ffeda0", "#fed976", "#feb24c", "#fd8d3c",
     "#fc4e2a", "#e31a1c", "#bd0026", "#800026", "#4d0019",
 ]
-T90P_DIST_LEVELS = [6, 8, 9, 10, 11, 12, 13, 14, 16, 18, 20]  # % of JJA days
+T90P_DIST_LEVELS = [5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 18]  # days summer⁻¹
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -576,27 +574,20 @@ if __name__ == "__main__":
     # ══════════════════════════════════════════════════════════════════════════
     print("\n=== Temperature Indices ===")
 
-    # ── T90p: Hot days (Tmean > local 90th pct) — expressed as % of JJA days ──
-    # ETCCDI convention: TX90p / TN90p are defined as "percentage of days
-    # exceeding the percentile".  Dividing by the fixed JJA length (92 days)
-    # makes the index season-length-independent and directly comparable to
-    # published TX90p figures.  By definition ~10 % of days exceed in the
-    # 1961-1990 reference period; the trend is in % decade⁻¹.
-    print("T90p: computing annual hot-day counts → % of JJA days …")
+    # ── T90p: Hot days (Tmean > local 90th pct) — days per JJA season ─────────
+    print("T90p: computing annual hot-day counts …")
     t90_days_model = annual_exceedance_days(tas_model, t90_model)
     t90_days_obs   = annual_exceedance_days(tas_obs,   t90_obs)
-    t90_pct_model  = (t90_days_model / JJA_NDAYS * 100.0).astype(np.float32)
-    t90_pct_obs    = (t90_days_obs   / JJA_NDAYS * 100.0).astype(np.float32)
-    save_index(t90_pct_model, "T90p_pct", "ICON")
-    save_index(t90_pct_obs,   "T90p_pct", "EOBS")
+    save_index(t90_days_model, "T90p_days", "ICON")
+    save_index(t90_days_obs,   "T90p_days", "EOBS")
 
     process_index(
-        name="T90p_exceedance_pct",
-        long_name="T90p — Hot days > 90th pct Tmean [% of JJA days]",
-        annual_model=t90_pct_model, annual_obs=t90_pct_obs,
-        thr_model=t90_model,        thr_obs=t90_obs,
-        unit="% of JJA days",       trend_unit="% decade⁻¹",
-        trend_levels=TEMP_LEVELS,   colors=TEMP_COLORS, tick_fmt="%.2f",
+        name="T90p_exceedance_days",
+        long_name="T90p — Hot days > 90th pct Tmean [days summer⁻¹]",
+        annual_model=t90_days_model, annual_obs=t90_days_obs,
+        thr_model=t90_model,         thr_obs=t90_obs,
+        unit="days summer⁻¹",        trend_unit="days decade⁻¹",
+        trend_levels=TEMP_LEVELS,    colors=TEMP_COLORS, tick_fmt="%.1f",
         gdf=gdf, geom=geom,
         summary_rows=summary_rows, overview_store=overview_store,
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
@@ -604,19 +595,19 @@ if __name__ == "__main__":
         force_diverging=True,   # symmetric blue–red bar incl. values below zero
     )
 
-    # ── T90p spatial distribution (climatological mean field, % of JJA days) ──
+    # ── T90p spatial distribution (climatological mean field, days summer⁻¹) ───
     # Companion to the trend map: shows the actual hot-day frequency pattern
     # (3-panel E-OBS | ICON-CLM | bias) so the magnitudes are visible, not only
     # the rate of change.  Mean over the full 1950–2022 record.
     print("T90p: plotting mean spatial distribution …")
     plot_climatology_maps(
-        obs_clim = t90_pct_obs.mean("year",   skipna=True),
-        mod_clim = t90_pct_model.mean("year", skipna=True),
+        obs_clim = t90_days_obs.mean("year",   skipna=True),
+        mod_clim = t90_days_model.mean("year", skipna=True),
         gdf=gdf, geom=geom,
-        outfile  = os.path.join(FIGDIR, "T90p_exceedance_pct_spatial_mean.png"),
+        outfile  = os.path.join(FIGDIR, "T90p_exceedance_days_spatial_mean.png"),
         levels   = T90P_DIST_LEVELS, colors=T90P_DIST_COLORS,
-        cbar_label = "T90p hot-day frequency [% of JJA days]", tick_fmt="%.0f",
-        suptitle = "T90p — Hot days > 90th pct Tmean [% of JJA days] — Mean 1950–2022",
+        cbar_label = "T90p hot-day frequency [days summer⁻¹]", tick_fmt="%.0f",
+        suptitle = "T90p — Hot days > 90th pct Tmean [days summer⁻¹] — Mean 1950–2022",
     )
 
     # ── HWN: Heatwave Number (≥3 consecutive T90p days) ──────────────────────
@@ -826,14 +817,6 @@ if __name__ == "__main__":
     #  SUMMARY FIGURES
     # ══════════════════════════════════════════════════════════════════════════
 
-    # ── Precipitation overview: all precip indices in one flagship figure ──────
-    print("\nGenerating precipitation overview figure …")
-    plot_precipitation_overview(
-        index_meta=overview_store,
-        gdf=gdf, geom=geom,
-        outfile=os.path.join(FIGDIR, "precipitation_overview.png"),
-    )
-
     # ── Taylor diagram: ICON-CLM model skill for all indices ──────────────────
     print("Generating Taylor diagram …")
     taylor_diagram(
@@ -860,13 +843,12 @@ if __name__ == "__main__":
     print("\n" + "=" * 66)
     print("Script 2 complete.")
     print(f"  Individual figures  → {FIGDIR}/")
-    for idx in ["T90p_exceedance_pct", "Heatwave_number", "Heatwave_duration",
+    for idx in ["T90p_exceedance_days", "Heatwave_number", "Heatwave_duration",
                 "R10mm", "Rx1day", "Rx5day",
                 "SDII", "R95pTOT", "CDD"]:
         print(f"    {idx}_trend_map.png")
         print(f"    {idx}_germany_series.png")
-    print(f"  Summary figures     → {FIGDIR}/precipitation_overview.png")
-    print(f"                        {FIGDIR}/taylor_diagram.png")
+    print(f"  Summary figures     → {FIGDIR}/taylor_diagram.png")
     print(f"                        {FIGDIR}/trend_heatmap.png")
     print(f"  Statistics table    → {csv_path}")
     print(f"  Annual NetCDF files → {NCDIR}/")

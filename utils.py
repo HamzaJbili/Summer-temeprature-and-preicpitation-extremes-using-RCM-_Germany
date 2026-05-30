@@ -1115,8 +1115,8 @@ def plot_germany_series(
     """
     from matplotlib.lines import Line2D
 
-    OBS_COL = "#1b7837"
-    MOD_COL = "#b2182b"
+    OBS_COL = "#000000"   # black (E-OBS / observations)
+    MOD_COL = "#e41a1c"   # red (ICON-CLM / model)
 
     years    = obs_series["year"].values.astype(int)
     obs_vals = obs_series.values.astype(float)
@@ -1128,9 +1128,9 @@ def plot_germany_series(
         fig.patch.set_facecolor("white")
         fig.suptitle(title, fontsize=10, fontweight="bold", y=1.01)
 
-        ax.plot(years, obs_vals, color=OBS_COL, lw=1.4, alpha=0.90,
+        ax.plot(years, obs_vals, color=OBS_COL, lw=1.0, alpha=0.65,
                 label="E-OBS", zorder=3)
-        ax.plot(years, mod_vals, color=MOD_COL, lw=1.4, alpha=0.90,
+        ax.plot(years, mod_vals, color=MOD_COL, lw=1.0, alpha=0.65,
                 label="ICON-CLM", zorder=3)
 
         # Theil-Sen trend lines
