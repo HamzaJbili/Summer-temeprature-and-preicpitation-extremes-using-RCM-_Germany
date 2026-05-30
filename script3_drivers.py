@@ -67,13 +67,10 @@ INDICES = [
     ("T90p_exceedance_days", "T90p_days"),
     ("Heatwave_number",      "HWN"),
     ("Heatwave_duration",    "HWD"),
-    # Precipitation — heavy events
-    ("R10mm",                "R10mm"),
-    ("Rx1day",               "Rx1day"),
-    ("Rx5day",               "Rx5day"),
+    # Precipitation — drought / intensity
     ("SDII",                 "SDII"),
-    # Precipitation — drought
     ("CDD",                  "CDD"),
+    ("SPI",                  "SPI"),
 ]
 
 # ── driver file configuration ─────────────────────────────────────────────────
