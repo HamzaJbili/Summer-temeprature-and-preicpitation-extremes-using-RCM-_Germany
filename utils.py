@@ -689,6 +689,69 @@ def annual_sdii(daily_jja, wet_min=WET_DAY_MIN):
     return sdii.astype(np.float32)
 
 
+def annual_spi_jja(daily_jja, ref_start=REF_START, ref_end=REF_END):
+    """
+    SPI — Standardised Precipitation Index computed on seasonal JJA totals.
+
+    The gamma distribution is fitted to the 1961-1990 reference-period seasonal
+    (JJA) precipitation totals at each grid cell.  All years are then transformed
+    via the fitted CDF to a standard-normal variate (SPI).
+
+    SPI > 0: wetter than the 1961-1990 median; SPI < 0: drier.
+    SPI ≤ −1 is conventionally 'moderately dry'; SPI ≤ −1.5 'severely dry'.
+    A positive trend means the summer is getting wetter relative to 1961-1990.
+
+    Mixed-distribution (p0): the probability of zero total precipitation in
+    a season is treated explicitly, so arid grid cells with occasional dry
+    summers are handled correctly.
+
+    Reference: McKee et al. (1993); Lloyd-Hughes & Saunders (2002).
+    """
+    from scipy.stats import gamma as gamma_dist, norm as norm_dist
+
+    seasonal = daily_jja.groupby("time.year").sum("time").astype(np.float32)
+    years    = seasonal["year"].values
+    lat      = seasonal["lat"].values
+    lon      = seasonal["lon"].values
+    all_arr  = seasonal.values               # (year, lat, lon)
+
+    ref_mask = (years >= int(ref_start)) & (years <= int(ref_end))
+    ref_arr  = all_arr[ref_mask]             # (n_ref, lat, lon)
+
+    out = np.full_like(all_arr, np.nan, dtype=np.float32)
+
+    for i in range(len(lat)):
+        for j in range(len(lon)):
+            ref_col = ref_arr[:, i, j]
+            ok_ref  = np.isfinite(ref_col) & (ref_col >= 0)
+            if ok_ref.sum() < 10:
+                continue
+            rv  = ref_col[ok_ref]
+            p0  = float(np.sum(rv == 0)) / len(rv)
+            pos = rv[rv > 0]
+            if len(pos) < 5:
+                continue
+            try:
+                a, _loc, scale = gamma_dist.fit(pos, floc=0)
+                all_col = all_arr[:, i, j]
+                for yi, v in enumerate(all_col):
+                    if not np.isfinite(v) or v < 0:
+                        continue
+                    if v == 0:
+                        cdf_v = p0 * 0.5
+                    else:
+                        cdf_v = p0 + (1.0 - p0) * float(
+                            gamma_dist.cdf(v, a, loc=0, scale=scale))
+                    cdf_v = float(np.clip(cdf_v, 1e-6, 1.0 - 1e-6))
+                    out[yi, i, j] = float(norm_dist.ppf(cdf_v))
+            except Exception:
+                pass
+
+    return xr.DataArray(
+        out, coords=seasonal.coords, dims=seasonal.dims, name="SPI"
+    )
+
+
 def annual_cwd(daily_jja, wet_min=WET_DAY_MIN):
     """
     CWD — Maximum consecutive wet days (P ≥ 1 mm day⁻¹) per JJA season.
@@ -1005,7 +1068,7 @@ def plot_obs_bias_maps(
     fig = plt.figure(figsize=(10.5, 5.2))
     fig.patch.set_facecolor("white")
     if suptitle:
-        fig.suptitle(suptitle, fontsize=11, fontweight="bold", y=0.99)
+        fig.suptitle(suptitle, fontsize=11, fontweight="normal", y=0.99)
 
     gs  = GridSpec(1, 3, width_ratios=[1, 0.08, 1],
                    left=0.03, right=0.93, top=0.91, bottom=0.04,

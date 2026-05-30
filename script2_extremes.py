@@ -4,7 +4,7 @@ script2_extremes.py
 Annual JJA extreme climate indices for ICON-CLM vs E-OBS over Germany,
 1950–2022.
 
-Indices computed (8 total)
+Indices computed (6 total)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
   Temperature (3)
   ┌─────────────────────────────────────────────────────────────────────────┐
@@ -13,17 +13,11 @@ Indices computed (8 total)
   │ HWD     Heatwave Duration: mean length of heatwave events (days/event) │
   └─────────────────────────────────────────────────────────────────────────┘
 
-  Precipitation — Heavy events (4)
-  ┌─────────────────────────────────────────────────────────────────────────┐
-  │ R10mm   Heavy precipitation days with P ≥ 10 mm day⁻¹                  │
-  │ Rx1day  Annual maximum 1-day precipitation (mm day⁻¹)                  │
-  │ Rx5day  Annual maximum consecutive 5-day precipitation (mm)             │
-  │ SDII    Simple Daily Intensity Index (mm wet-day⁻¹)                    │
-  └─────────────────────────────────────────────────────────────────────────┘
-
-  Precipitation — Drought (1)
+  Precipitation — Drought / Intensity (3)
   ┌─────────────────────────────────────────────────────────────────────────┐
   │ CDD     Maximum consecutive dry days per JJA season                    │
+  │ SDII    Simple Daily Intensity Index (mm wet-day⁻¹)                    │
+  │ SPI     Standardised Precipitation Index (JJA seasonal total)          │
   └─────────────────────────────────────────────────────────────────────────┘
 
 Index selection rationale
@@ -39,20 +33,16 @@ Index selection rationale
   full hazard profile: a doubling of both HWN and HWD implies four times more
   heatwave exposure per season than if frequency alone doubled.
 
-  Heavy precipitation: R10mm counts heavy-rain days on a fixed 10 mm threshold
-  (heavy-precipitation frequency); Rx1day and Rx5day capture peak intensities
-  for flash-flood and catchment-scale flood risk; SDII isolates changes in
-  intensity from changes in frequency.
+  Precipitation — Drought / Intensity: CDD is the ETCCDI benchmark drought-
+  duration index, directly coupled to soil-moisture deficits and heat–drought
+  co-occurrence; SDII isolates intensity changes from frequency changes; SPI
+  provides a standardised, distribution-normalised drought severity metric.
 
-  Drought: CDD is the ETCCDI benchmark for drought duration and is directly
-  coupled to soil-moisture deficits and heat–drought co-occurrence.
-
-  Percentile-based precipitation indices (R95p days > 95th-pct wet-day, and
-  the R95pTOT concentration index) were dropped: over Germany their JJA signal
-  is weak and spatially incoherent, so the fixed-threshold and intensity
-  indices above carry the precipitation story.  Excluded indices (R99p, R20mm,
-  Dry_days, CWD): either redundant with retained indices or lower
-  signal-to-noise in Germany's maritime-continental summer climate.
+  Excluded indices: R10mm, Rx1day, Rx5day (heavy-event frequency / peak
+  intensity) are reserved for later analysis; R95p and R95pTOT were dropped
+  because their JJA signal is weak and spatially incoherent over Germany;
+  R99p, R20mm, CWD are either redundant or lower signal-to-noise in
+  Germany's maritime-continental summer climate.
 
 Methodological choices
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -105,10 +95,9 @@ from utils import (
     # geometry
     load_country_shape,
     # precipitation index functions (defined in utils)
-    annual_rx1day, annual_rx5day,
-    annual_sdii, annual_r10mm,
+    annual_sdii, annual_spi_jja,
     # visualisation
-    set_ipcc_style, plot_paired_trend_maps, plot_germany_series,
+    set_ipcc_style, plot_obs_bias_maps, plot_germany_series,
     taylor_diagram, plot_trend_heatmap,
     plot_climatology_maps,
     # constants
@@ -162,15 +151,49 @@ CDD_COLORS = [
 ]
 
 # ── Colormap level definitions (Theil-Sen slope, unit per decade) ──────────────
-TEMP_LEVELS   = [-8, -6, -4, -2, -1,     0,    1,   2,    4,    6,    8]  # days/decade
-HW_LEVELS     = [-2.0, -1.5, -1.0, -0.5, -0.25, 0, 0.25, 0.5, 1.0, 1.5, 2.0]
-HWD_LEVELS    = [-3.0, -2.0, -1.5, -1.0, -0.5,  0,  0.5, 1.0, 1.5, 2.0, 3.0]
-PREC_LEVELS   = [-8, -6, -4, -2, -1,     0,    1,   2,    4,    6,    8]  # days/decade
-CDD_LEVELS    = [-8, -6, -4, -2, -1,     0,    1,   2,    4,    6,    8]  # days/decade
-RX1DAY_LEVELS = [-5, -4, -3, -2, -1,     0,    1,   2,    3,    4,    5]  # mm/decade
-RX5DAY_LEVELS = [-10, -8, -6, -4, -2,    0,    2,   4,    6,    8,   10]  # mm/decade
-SDII_LEVELS   = [-1.0, -0.75, -0.5, -0.25, -0.1, 0, 0.1, 0.25, 0.5, 0.75, 1.0]
-R10MM_LEVELS  = [-2.0, -1.5, -1.0, -0.5, -0.25, 0, 0.25, 0.5, 1.0, 1.5, 2.0]  # days/decade
+# ── Trend map colormap levels (Theil-Sen slope per decade) ────────────────────
+TEMP_LEVELS = [-8, -6, -4, -2, -1,    0,   1,    2,    4,    6,    8]  # days/decade
+HW_LEVELS   = [-2.0, -1.5, -1.0, -0.5, -0.25, 0, 0.25, 0.5, 1.0, 1.5, 2.0]
+HWD_LEVELS  = [-3.0, -2.0, -1.5, -1.0, -0.5,  0,  0.5, 1.0, 1.5, 2.0, 3.0]
+CDD_LEVELS  = [-3.0, -2.0, -1.5, -1.0, -0.5,  0,  0.5, 1.0, 1.5, 2.0, 3.0]  # days/decade
+SDII_LEVELS = [-1.0, -0.75, -0.5, -0.25, -0.1, 0, 0.1, 0.25, 0.5, 0.75, 1.0]
+SPI_LEVELS  = [-0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5]  # SPI/decade
+
+# ── Mean-field (climatology) palettes and levels ───────────────────────────────
+# T90p threshold — actual 90th-pct JJA Tmean values (°C; adjust if data is in K)
+T90P_THR_COLORS = [
+    "#ffffcc", "#ffeda0", "#fed976", "#feb24c", "#fd8d3c",
+    "#fc4e2a", "#e31a1c", "#bd0026", "#800026", "#4d0019",
+]
+T90P_THR_LEVELS = [17, 19, 21, 22, 23, 24, 25, 26, 27, 28, 30]  # °C
+
+# HWN mean — events per summer
+HWN_CLIM_COLORS = [
+    "#ffffcc", "#ffeda0", "#fed976", "#feb24c", "#fd8d3c",
+    "#fc4e2a", "#e31a1c", "#bd0026", "#800026", "#4d0019",
+]
+HWN_CLIM_LEVELS = [0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 2.0, 2.5]
+
+# HWD mean — days per event
+HWD_CLIM_COLORS = [
+    "#ffffcc", "#ffeda0", "#fed976", "#feb24c", "#fd8d3c",
+    "#fc4e2a", "#e31a1c", "#bd0026", "#800026", "#4d0019",
+]
+HWD_CLIM_LEVELS = [3, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.5]
+
+# SDII mean — mm per wet day
+SDII_CLIM_COLORS = [
+    "#f0f9ff", "#d0e7f5", "#a8d1e8", "#7db8d8", "#4f99c4",
+    "#2b7ab3", "#1560a0", "#0b4d89", "#073b71", "#042a58",
+]
+SDII_CLIM_LEVELS = [3, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 9]  # mm/wet-day
+
+# CDD mean — max consecutive dry days per summer
+CDD_CLIM_COLORS = [
+    "#fff7bc", "#fee391", "#fec44f", "#fe9929", "#ec7014",
+    "#cc4c02", "#993404", "#772b00", "#5a1f00", "#3d1200",
+]
+CDD_CLIM_LEVELS = [4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16]  # days
 
 # Sequential warm palette + levels for the T90p mean spatial-distribution map
 # (climatological hot-day frequency, days summer⁻¹; not a trend → sequential)
@@ -368,7 +391,7 @@ def process_index(
     unit, trend_unit, trend_levels, colors, tick_fmt,
     gdf, geom,
     summary_rows, ts_obs_store, ts_mod_store, heatmap_rows,
-    force_diverging=False, add_bias=False,
+    obs_sequential=False,
 ):
     """
     Run the full analysis pipeline for one extreme index.
@@ -400,27 +423,26 @@ def process_index(
     summary_rows : list — appended with per-index statistics dict
     ts_obs_store, ts_mod_store : dict — Germany-average series for Taylor diagram
     heatmap_rows   : list — stores trend stats for the trend heatmap
-    force_diverging : bool — force a symmetric blue-red trend colorbar
-    add_bias    : bool — append a third Bias (ICON − E-OBS) panel to the
-                  trend map (E-OBS | ICON-CLM | Bias)
+    obs_sequential : bool — if True, the E-OBS panel uses a one-sided sequential
+        palette (for indices with a dominant trend direction); False (default)
+        allows diverging scale so both positive and negative trend areas appear.
     """
     print(f"  • {name}: computing trend maps …")
     trend_obs   = compute_trend_maps(annual_obs)
     trend_model = compute_trend_maps(annual_model)
 
-    # ── 1. Paired trend map ───────────────────────────────────────────────────
-    plot_paired_trend_maps(
+    # ── 1. Trend map: E-OBS | Diff (ICON − E-OBS) ────────────────────────────
+    plot_obs_bias_maps(
         obs_slope   = trend_obs["sen_slope"],
         model_slope = trend_model["sen_slope"],
         obs_pval    = trend_obs["mk_pvalue"],
         model_pval  = trend_model["mk_pvalue"],
         gdf=gdf, geom=geom,
         outfile     = os.path.join(FIGDIR, f"{name}_trend_map.png"),
-        levels=trend_levels, colors=colors,
+        obs_levels  = trend_levels, obs_colors=colors,
         cbar_label  = trend_unit, tick_fmt=tick_fmt,
         suptitle    = f"{long_name} — Theil-Sen Trend 1950–2022",
-        force_diverging=force_diverging,
-        add_bias=add_bias,
+        obs_sequential=obs_sequential,
     )
 
     # ── 2. Germany-average series and 1991-2020 anomalies ────────────────────
@@ -558,15 +580,10 @@ if __name__ == "__main__":
         summary_rows=summary_rows,
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
         heatmap_rows=heatmap_rows,
-        force_diverging=True,   # symmetric blue–red bar incl. values below zero
-        add_bias=True,          # 3-panel trend map: E-OBS | ICON-CLM | Bias
     )
 
-    # ── T90p spatial distribution (climatological mean field, days summer⁻¹) ───
-    # Companion to the trend map: shows the actual hot-day frequency pattern
-    # (3-panel E-OBS | ICON-CLM | bias) so the magnitudes are visible, not only
-    # the rate of change.  Mean over the full 1950–2022 record.
-    print("T90p: plotting mean spatial distribution …")
+    # ── T90p mean hot-day frequency (E-OBS | ICON-CLM | Bias) ────────────────
+    print("T90p: plotting mean hot-day frequency …")
     plot_climatology_maps(
         obs_clim = t90_days_obs.mean("year",   skipna=True),
         mod_clim = t90_days_model.mean("year", skipna=True),
@@ -575,6 +592,19 @@ if __name__ == "__main__":
         levels   = T90P_DIST_LEVELS, colors=T90P_DIST_COLORS,
         cbar_label = "T90p hot-day frequency [days summer⁻¹]", tick_fmt="%.0f",
         suptitle = "T90p — Hot days > 90th pct Tmean [days summer⁻¹] — Mean 1950–2022",
+    )
+
+    # ── T90p threshold field (actual 90th-pct temperature values) ─────────────
+    # Shows the spatial pattern of the threshold itself (°C), i.e. how warm
+    # it needs to be at each grid cell to qualify as a "hot day".
+    print("T90p: plotting 90th-pct temperature threshold field …")
+    plot_climatology_maps(
+        obs_clim = t90_obs,   mod_clim = t90_model,
+        gdf=gdf, geom=geom,
+        outfile  = os.path.join(FIGDIR, "T90p_threshold_spatial.png"),
+        levels   = T90P_THR_LEVELS, colors=T90P_THR_COLORS,
+        cbar_label = "90th-pct Tmean threshold [°C]", tick_fmt="%.1f",
+        suptitle = "T90p threshold — 90th-pct JJA Tmean 1961–1990",
     )
 
     # ── HWN: Heatwave Number (≥3 consecutive T90p days) ──────────────────────
@@ -595,6 +625,15 @@ if __name__ == "__main__":
         summary_rows=summary_rows,
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
         heatmap_rows=heatmap_rows,
+    )
+    plot_climatology_maps(
+        obs_clim = hwn_obs.mean("year",   skipna=True),
+        mod_clim = hwn_model.mean("year", skipna=True),
+        gdf=gdf, geom=geom,
+        outfile  = os.path.join(FIGDIR, "Heatwave_number_spatial_mean.png"),
+        levels   = HWN_CLIM_LEVELS, colors=HWN_CLIM_COLORS,
+        cbar_label = "HWN mean [events summer⁻¹]", tick_fmt="%.1f",
+        suptitle = "HWN — Mean heatwave number 1950–2022",
     )
 
     # ── HWD: Heatwave Duration (mean days per heatwave event) ─────────────────
@@ -618,92 +657,25 @@ if __name__ == "__main__":
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
         heatmap_rows=heatmap_rows,
     )
+    plot_climatology_maps(
+        obs_clim = hwd_obs.mean("year",   skipna=True),
+        mod_clim = hwd_model.mean("year", skipna=True),
+        gdf=gdf, geom=geom,
+        outfile  = os.path.join(FIGDIR, "Heatwave_duration_spatial_mean.png"),
+        levels   = HWD_CLIM_LEVELS, colors=HWD_CLIM_COLORS,
+        cbar_label = "HWD mean [days event⁻¹]", tick_fmt="%.1f",
+        suptitle = "HWD — Mean heatwave duration 1950–2022",
+    )
 
     # ══════════════════════════════════════════════════════════════════════════
-    #  PRECIPITATION INDICES — HEAVY EVENTS
+    #  PRECIPITATION INDICES — DROUGHT / INTENSITY
     # ══════════════════════════════════════════════════════════════════════════
-    print("\n=== Precipitation Indices — Heavy Events ===")
-
-    # NOTE: the percentile-based precipitation indices (R95p exceedance days
-    # and the R95pTOT concentration index) were removed — over Germany their
-    # JJA signal is weak and spatially incoherent (summer heavy-rain *frequency*
-    # trends are not robust here), while the *intensity* signal is carried by
-    # Rx1day, Rx5day and SDII.  R10mm characterises heavy-precipitation-day
-    # frequency on an absolute (10 mm) threshold, which avoids the base-period
-    # sensitivity of percentile indices and has a clear physical meaning.
-
-    # ── R10mm: Heavy precipitation days (P ≥ 10 mm day⁻¹) ─────────────────────
-    # Number of JJA days per season with ≥10 mm — a fixed-threshold heavy-rain
-    # frequency index marking the onset of rapid surface runoff; among the most
-    # widely reported ETCCDI indices in European precipitation studies.
-    print("R10mm: computing heavy precipitation day counts …")
-    r10_model = annual_r10mm(pr_model)
-    r10_obs   = annual_r10mm(pr_obs)
-    save_index(r10_model, "R10mm", "ICON")
-    save_index(r10_obs,   "R10mm", "EOBS")
-
-    process_index(
-        name="R10mm",
-        long_name="R10mm — Heavy precip days ≥ 10 mm [days summer⁻¹]",
-        annual_model=r10_model, annual_obs=r10_obs,
-        thr_model=None,          thr_obs=None,
-        unit="days summer⁻¹",    trend_unit="days decade⁻¹",
-        trend_levels=R10MM_LEVELS, colors=PREC_COLORS, tick_fmt="%.2f",
-        gdf=gdf, geom=geom,
-        summary_rows=summary_rows,
-        ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
-        heatmap_rows=heatmap_rows,
-    )
-
-    # ── Rx1day: Maximum 1-day precipitation amount ────────────────────────────
-    # Captures the single most intense daily rainfall event per season;
-    # directly relevant to flash-flood triggering and urban drainage capacity.
-    print("Rx1day: computing annual maximum 1-day precipitation …")
-    rx1_model = annual_rx1day(pr_model)
-    rx1_obs   = annual_rx1day(pr_obs)
-    save_index(rx1_model, "Rx1day", "ICON")
-    save_index(rx1_obs,   "Rx1day", "EOBS")
-
-    process_index(
-        name="Rx1day",
-        long_name="Rx1day — Max 1-day precipitation [mm day⁻¹]",
-        annual_model=rx1_model, annual_obs=rx1_obs,
-        thr_model=None,          thr_obs=None,
-        unit="mm day⁻¹",         trend_unit="mm decade⁻¹",
-        trend_levels=RX1DAY_LEVELS, colors=PREC_COLORS, tick_fmt="%.1f",
-        gdf=gdf, geom=geom,
-        summary_rows=summary_rows,
-        ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
-        heatmap_rows=heatmap_rows,
-    )
-
-    # ── Rx5day: Maximum consecutive 5-day precipitation ──────────────────────
-    # Multi-day accumulation links to catchment-scale river flooding: soil
-    # saturation from successive heavy days can produce run-off flooding even
-    # when no single day exceeds the flash-flood threshold.
-    print("Rx5day: computing annual maximum 5-day precipitation …")
-    rx5_model = annual_rx5day(pr_model)
-    rx5_obs   = annual_rx5day(pr_obs)
-    save_index(rx5_model, "Rx5day", "ICON")
-    save_index(rx5_obs,   "Rx5day", "EOBS")
-
-    process_index(
-        name="Rx5day",
-        long_name="Rx5day — Max 5-day precipitation [mm]",
-        annual_model=rx5_model, annual_obs=rx5_obs,
-        thr_model=None,          thr_obs=None,
-        unit="mm",                trend_unit="mm decade⁻¹",
-        trend_levels=RX5DAY_LEVELS, colors=PREC_COLORS, tick_fmt="%.1f",
-        gdf=gdf, geom=geom,
-        summary_rows=summary_rows,
-        ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
-        heatmap_rows=heatmap_rows,
-    )
+    print("\n=== Precipitation Indices — Drought / Intensity ===")
 
     # ── SDII: Simple Daily Intensity Index ────────────────────────────────────
     # Wet-day mean intensity; decouples intensity changes from frequency.
-    # If total seasonal precipitation is unchanged but SDII rises, rain events
-    # have become more intense and dry spells between them longer.
+    # A rising SDII with stable or declining totals is the hallmark of
+    # precipitation intensification (fewer, more intense events).
     print("SDII: computing simple daily intensity index …")
     sdii_model = annual_sdii(pr_model)
     sdii_obs   = annual_sdii(pr_obs)
@@ -722,10 +694,16 @@ if __name__ == "__main__":
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
         heatmap_rows=heatmap_rows,
     )
+    plot_climatology_maps(
+        obs_clim = sdii_obs.mean("year",   skipna=True),
+        mod_clim = sdii_model.mean("year", skipna=True),
+        gdf=gdf, geom=geom,
+        outfile  = os.path.join(FIGDIR, "SDII_spatial_mean.png"),
+        levels   = SDII_CLIM_LEVELS, colors=SDII_CLIM_COLORS,
+        cbar_label = "SDII mean [mm wet-day⁻¹]", tick_fmt="%.1f",
+        suptitle = "SDII — Mean daily intensity 1950–2022",
+    )
 
-    # ══════════════════════════════════════════════════════════════════════════
-    #  PRECIPITATION INDICES — DROUGHT
-    # ══════════════════════════════════════════════════════════════════════════
     print("\n=== Precipitation Indices — Drought ===")
 
     # ── CDD: Maximum consecutive dry days ─────────────────────────────────────
@@ -751,6 +729,36 @@ if __name__ == "__main__":
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
         heatmap_rows=heatmap_rows,
     )
+    plot_climatology_maps(
+        obs_clim = cdd_obs.mean("year",   skipna=True),
+        mod_clim = cdd_model.mean("year", skipna=True),
+        gdf=gdf, geom=geom,
+        outfile  = os.path.join(FIGDIR, "CDD_spatial_mean.png"),
+        levels   = CDD_CLIM_LEVELS, colors=CDD_CLIM_COLORS,
+        cbar_label = "CDD mean [days summer⁻¹]", tick_fmt="%.0f",
+        suptitle = "CDD — Mean max consecutive dry days 1950–2022",
+    )
+
+    # ── SPI: Standardised Precipitation Index (JJA seasonal total) ───────────
+    print("SPI: computing standardised precipitation index …")
+    spi_model = annual_spi_jja(pr_model)
+    spi_obs   = annual_spi_jja(pr_obs)
+    save_index(spi_model, "SPI", "ICON")
+    save_index(spi_obs,   "SPI", "EOBS")
+
+    process_index(
+        name="SPI",
+        long_name="SPI — Standardised Precipitation Index [dimensionless]",
+        annual_model=spi_model, annual_obs=spi_obs,
+        thr_model=None,          thr_obs=None,
+        unit="SPI [-]",          trend_unit="SPI per decade",
+        trend_levels=SPI_LEVELS,  colors=PREC_COLORS, tick_fmt="%.2f",
+        gdf=gdf, geom=geom,
+        summary_rows=summary_rows,
+        ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
+        heatmap_rows=heatmap_rows,
+    )
+    # SPI mean ≈ 0 by construction — no climatology map
 
     # ══════════════════════════════════════════════════════════════════════════
     #  SUMMARY FIGURES
@@ -783,7 +791,7 @@ if __name__ == "__main__":
     print("Script 2 complete.")
     print(f"  Individual figures  → {FIGDIR}/")
     for idx in ["T90p_exceedance_days", "Heatwave_number", "Heatwave_duration",
-                "R10mm", "Rx1day", "Rx5day", "SDII", "CDD"]:
+                "SDII", "CDD", "SPI"]:
         print(f"    {idx}_trend_map.png")
         print(f"    {idx}_germany_series.png")
     print(f"  Summary figures     → {FIGDIR}/taylor_diagram.png")
