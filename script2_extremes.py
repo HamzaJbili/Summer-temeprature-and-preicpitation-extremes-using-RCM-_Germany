@@ -15,7 +15,7 @@ Indices computed (9 total)
 
   Precipitation — Heavy events (4)
   ┌─────────────────────────────────────────────────────────────────────────┐
-  │ R95p    Days exceeding 95th pct of 1961-1990 wet-day distribution      │
+  │ R10mm   Heavy precipitation days with P ≥ 10 mm day⁻¹                  │
   │ Rx1day  Annual maximum 1-day precipitation (mm day⁻¹)                  │
   │ Rx5day  Annual maximum consecutive 5-day precipitation (mm)             │
   │ SDII    Simple Daily Intensity Index (mm wet-day⁻¹)                    │
@@ -45,20 +45,22 @@ Index selection rationale
   HWD implies four times more heatwave exposure per season than if frequency
   alone doubled.
 
-  Heavy precipitation: R95p captures how often extreme rainfall occurs
-  relative to the historical wet-day distribution; Rx1day and Rx5day capture
-  peak intensities for flash-flood and catchment-scale flood risk; SDII
-  isolates changes in intensity from changes in frequency.  R95pTOT reveals
-  whether an increasing fraction of seasonal rainfall is delivered in a few
-  very intense events — the 'intensification of extremes' signal.
+  Heavy precipitation: R10mm counts heavy-rain days on a fixed 10 mm threshold
+  (heavy-precipitation frequency); Rx1day and Rx5day capture peak intensities
+  for flash-flood and catchment-scale flood risk; SDII isolates changes in
+  intensity from changes in frequency.  R95pTOT reveals whether an increasing
+  fraction of seasonal rainfall is delivered in a few very intense events —
+  the 'intensification of extremes' signal.
 
   Drought: CDD is the ETCCDI benchmark for drought duration and is directly
   coupled to soil-moisture deficits and heat–drought co-occurrence.
 
-  Excluded indices (R99p, R10mm, R20mm, Dry_days, CWD): either redundant
-  with retained indices, have lower signal-to-noise in Germany's maritime-
-  continental climate, or are better suited to an appendix sensitivity
-  analysis.
+  R95p (days > 95th-pct wet-day) was dropped: over Germany its JJA trend is
+  weak and spatially incoherent (the summer heavy-rain *frequency* signal is
+  not robust), so the intensity/concentration indices above carry the
+  precipitation story.  Excluded indices (R99p, R20mm, Dry_days, CWD): either
+  redundant with retained indices or lower signal-to-noise in Germany's
+  maritime-continental summer climate.
 
 Methodological choices
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -113,10 +115,11 @@ from utils import (
     load_country_shape,
     # precipitation index functions (defined in utils)
     annual_rx1day, annual_rx5day,
-    annual_sdii, annual_r95ptot,
+    annual_sdii, annual_r95ptot, annual_r10mm,
     # visualisation
     set_ipcc_style, plot_paired_trend_maps, plot_germany_series,
     plot_precipitation_overview, taylor_diagram, plot_trend_heatmap,
+    plot_climatology_maps,
     # constants
     REF_START, REF_END, ANOM_START, ANOM_END, DPI, WET_DAY_MIN, DRY_DAY_MAX,
 )
@@ -178,6 +181,15 @@ RX1DAY_LEVELS = [-5, -4, -3, -2, -1,     0,    1,   2,    3,    4,    5]  # mm/d
 RX5DAY_LEVELS = [-10, -8, -6, -4, -2,    0,    2,   4,    6,    8,   10]  # mm/decade
 SDII_LEVELS   = [-1.0, -0.75, -0.5, -0.25, -0.1, 0, 0.1, 0.25, 0.5, 0.75, 1.0]
 R95TOT_LEVELS = [-8, -6, -4, -2, -1,     0,    1,   2,    4,    6,    8]  # %/decade
+R10MM_LEVELS  = [-2.0, -1.5, -1.0, -0.5, -0.25, 0, 0.25, 0.5, 1.0, 1.5, 2.0]  # days/decade
+
+# Sequential warm palette + levels for the T90p mean spatial-distribution map
+# (climatological hot-day frequency, % of JJA days; not a trend → sequential)
+T90P_DIST_COLORS = [
+    "#ffffcc", "#ffeda0", "#fed976", "#feb24c", "#fd8d3c",
+    "#fc4e2a", "#e31a1c", "#bd0026", "#800026", "#4d0019",
+]
+T90P_DIST_LEVELS = [6, 8, 9, 10, 11, 12, 13, 14, 16, 18, 20]  # % of JJA days
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -369,6 +381,7 @@ def process_index(
     unit, trend_unit, trend_levels, colors, tick_fmt,
     gdf, geom,
     summary_rows, overview_store, ts_obs_store, ts_mod_store, heatmap_rows,
+    force_diverging=False,
 ):
     """
     Run the full analysis pipeline for one extreme index.
@@ -417,6 +430,7 @@ def process_index(
         levels=trend_levels, colors=colors,
         cbar_label  = trend_unit, tick_fmt=tick_fmt,
         suptitle    = f"{long_name} — Theil-Sen Trend 1950–2022",
+        force_diverging=force_diverging,
     )
 
     # ── 2. Germany-average series and 1991-2020 anomalies ────────────────────
@@ -518,7 +532,7 @@ def _fmt4(v):
 def _is_precip(name):
     """Return True for precipitation-related indices (for precipitation overview)."""
     PRECIP_NAMES = {
-        "R95p_exceedance_days",
+        "R10mm",
         "Rx1day", "Rx5day",
         "SDII", "R95pTOT",
         "CDD",
@@ -587,6 +601,22 @@ if __name__ == "__main__":
         summary_rows=summary_rows, overview_store=overview_store,
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
         heatmap_rows=heatmap_rows,
+        force_diverging=True,   # symmetric blue–red bar incl. values below zero
+    )
+
+    # ── T90p spatial distribution (climatological mean field, % of JJA days) ──
+    # Companion to the trend map: shows the actual hot-day frequency pattern
+    # (3-panel E-OBS | ICON-CLM | bias) so the magnitudes are visible, not only
+    # the rate of change.  Mean over the full 1950–2022 record.
+    print("T90p: plotting mean spatial distribution …")
+    plot_climatology_maps(
+        obs_clim = t90_pct_obs.mean("year",   skipna=True),
+        mod_clim = t90_pct_model.mean("year", skipna=True),
+        gdf=gdf, geom=geom,
+        outfile  = os.path.join(FIGDIR, "T90p_exceedance_pct_spatial_mean.png"),
+        levels   = T90P_DIST_LEVELS, colors=T90P_DIST_COLORS,
+        cbar_label = "T90p hot-day frequency [% of JJA days]", tick_fmt="%.0f",
+        suptitle = "T90p — Hot days > 90th pct Tmean [% of JJA days] — Mean 1950–2022",
     )
 
     # ── HWN: Heatwave Number (≥3 consecutive T90p days) ──────────────────────
@@ -636,23 +666,31 @@ if __name__ == "__main__":
     # ══════════════════════════════════════════════════════════════════════════
     print("\n=== Precipitation Indices — Heavy Events ===")
 
-    # ── R95p: Days exceeding 95th pct of 1961-1990 wet-day distribution ───────
-    # R95p measures how frequently very heavy rain occurs relative to the
-    # historical wet-day baseline; a positive trend indicates more frequent
-    # extreme rainfall events.
-    print("R95p: computing exceedance day counts …")
-    r95_days_model = annual_exceedance_days(pr_model, r95_model)
-    r95_days_obs   = annual_exceedance_days(pr_obs,   r95_obs)
-    save_index(r95_days_model, "R95p_days", "ICON")
-    save_index(r95_days_obs,   "R95p_days", "EOBS")
+    # NOTE: R95p (days > 95th-pct wet-day) was removed from the index set — it
+    # showed no coherent JJA trend over Germany (consistent with the literature:
+    # summer heavy-rain *frequency* trends are weak/insignificant here, while the
+    # *intensity* signal is carried by Rx1day, Rx5day, SDII and R95pTOT).  The
+    # 95th-pct wet-day threshold (r95_obs/r95_model) is still computed above
+    # because R95pTOT requires it.  R10mm is added below to characterise
+    # heavy-precipitation-day frequency on an absolute (10 mm) threshold.
+
+    # ── R10mm: Heavy precipitation days (P ≥ 10 mm day⁻¹) ─────────────────────
+    # Number of JJA days per season with ≥10 mm — a fixed-threshold heavy-rain
+    # frequency index marking the onset of rapid surface runoff; among the most
+    # widely reported ETCCDI indices in European precipitation studies.
+    print("R10mm: computing heavy precipitation day counts …")
+    r10_model = annual_r10mm(pr_model)
+    r10_obs   = annual_r10mm(pr_obs)
+    save_index(r10_model, "R10mm", "ICON")
+    save_index(r10_obs,   "R10mm", "EOBS")
 
     process_index(
-        name="R95p_exceedance_days",
-        long_name="R95p — Very heavy rain days > 95th pct [days summer⁻¹]",
-        annual_model=r95_days_model, annual_obs=r95_days_obs,
-        thr_model=r95_model,          thr_obs=r95_obs,
-        unit="days summer⁻¹",         trend_unit="days decade⁻¹",
-        trend_levels=PREC_LEVELS,     colors=PREC_COLORS, tick_fmt="%.1f",
+        name="R10mm",
+        long_name="R10mm — Heavy precip days ≥ 10 mm [days summer⁻¹]",
+        annual_model=r10_model, annual_obs=r10_obs,
+        thr_model=None,          thr_obs=None,
+        unit="days summer⁻¹",    trend_unit="days decade⁻¹",
+        trend_levels=R10MM_LEVELS, colors=PREC_COLORS, tick_fmt="%.2f",
         gdf=gdf, geom=geom,
         summary_rows=summary_rows, overview_store=overview_store,
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
@@ -823,7 +861,7 @@ if __name__ == "__main__":
     print("Script 2 complete.")
     print(f"  Individual figures  → {FIGDIR}/")
     for idx in ["T90p_exceedance_pct", "Heatwave_number", "Heatwave_duration",
-                "R95p_exceedance_days", "Rx1day", "Rx5day",
+                "R10mm", "Rx1day", "Rx5day",
                 "SDII", "R95pTOT", "CDD"]:
         print(f"    {idx}_trend_map.png")
         print(f"    {idx}_germany_series.png")
