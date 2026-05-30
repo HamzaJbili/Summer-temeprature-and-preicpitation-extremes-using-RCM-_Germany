@@ -72,8 +72,6 @@ INDICES = [
     ("Rx1day",               "Rx1day"),
     ("Rx5day",               "Rx5day"),
     ("SDII",                 "SDII"),
-    # Precipitation — concentration
-    ("R95pTOT",              "R95pTOT"),
     # Precipitation — drought
     ("CDD",                  "CDD"),
 ]

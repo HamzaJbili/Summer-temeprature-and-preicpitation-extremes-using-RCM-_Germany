@@ -58,7 +58,7 @@ MIN_VALID      = 10       # minimum valid years required for a trend estimate
 DPI            = 600      # output resolution
 MAP_EXTENT     = [5.8, 15.2, 47.4, 55.1]   # Germany [lon_min, lon_max, lat_min, lat_max]
 DISPLAY_FACTOR = 5        # bilinear upsampling factor for map display (visual only)
-WET_DAY_MIN    = 1.0      # mm/day — wet-day threshold (R95p, R99p, SDII, CWD, R95pTOT)
+WET_DAY_MIN    = 1.0      # mm/day — wet-day threshold (SDII, CWD)
 DRY_DAY_MAX    = 1.0      # mm/day — dry-day threshold (Dry_days, CDD)
 
 
@@ -689,34 +689,6 @@ def annual_sdii(daily_jja, wet_min=WET_DAY_MIN):
     return sdii.astype(np.float32)
 
 
-def annual_r95ptot(daily_jja, threshold_r95, wet_min=WET_DAY_MIN):
-    """
-    R95pTOT — Fraction of total wet-day precipitation from very heavy events (%).
-
-    Percentage of the seasonal wet-day precipitation total that falls on days
-    exceeding the R95p threshold (95th percentile of the 1961-1990 wet-day
-    distribution).  High R95pTOT values indicate that a large share of seasonal
-    rainfall is delivered in a few extreme events — a key fingerprint of
-    precipitation intensification and concentration independent of total amount.
-
-    Reference: Fischer et al. (2014); Zolina et al. (2014).
-    """
-    # Precipitation on days exceeding the local R95p threshold
-    heavy = (
-        daily_jja.where(daily_jja > threshold_r95)
-        .groupby("time.year")
-        .sum("time", skipna=True)
-    )
-    # Total wet-day precipitation (denominator)
-    total = (
-        daily_jja.where(daily_jja >= wet_min)
-        .groupby("time.year")
-        .sum("time", skipna=True)
-    )
-    frac = (heavy / total.where(total > 0)) * 100.0
-    return frac.astype(np.float32)
-
-
 def annual_cwd(daily_jja, wet_min=WET_DAY_MIN):
     """
     CWD — Maximum consecutive wet days (P ≥ 1 mm day⁻¹) per JJA season.
@@ -788,14 +760,19 @@ def plot_paired_trend_maps(
     tick_fmt="%.2f",
     suptitle=None,
     force_diverging=False,
+    add_bias=False,
 ):
     """
-    Publication-quality two-panel trend map: (a) E-OBS, (b) ICON-CLM.
+    Publication-quality trend map: (a) E-OBS, (b) ICON-CLM, and optionally
+    (c) Bias (ICON − E-OBS).
 
-    Each panel has its own slim vertical colorbar (same scale, all boundary
-    ticks labeled).  Significance stippling and domain-mean annotated per panel.
+    Each panel has its own slim vertical colorbar.  Panels (a) and (b) share
+    one scale (pooled data) so the model–obs comparison is valid; the optional
+    bias panel (c) gets its own symmetric diverging scale.  Significance
+    stippling and domain-mean are annotated on the two data panels.
+
+    add_bias=True appends the (ICON − E-OBS) difference as a third panel.
     """
-    from matplotlib.ticker import MaxNLocator
     from matplotlib.gridspec import GridSpec
 
     PC   = ccrs.PlateCarree()
@@ -804,35 +781,59 @@ def plot_paired_trend_maps(
     levels_base = list(levels)
     colors_base = list(colors)
 
-    # GridSpec: map_a | gap | map_b  (colorbars via inset_axes)
-    fig = plt.figure(figsize=(10.5, 5.5))
-    fig.patch.set_facecolor("white")
-    if suptitle:
-        fig.suptitle(suptitle, fontsize=11, fontweight="normal", y=0.99)
-
-    gs = GridSpec(1, 3, width_ratios=[1, 0.08, 1],
-                  left=0.03, right=0.93, top=0.91, bottom=0.04,
-                  wspace=0.0)
-
-    # Shared scale — pool both panels so the comparison is scientifically valid
+    # Shared scale for the two data panels — pool both so the comparison is valid
     combined = np.concatenate([obs_slope.values.ravel(), model_slope.values.ravel()])
     lvls_shared, _, cmap_shared, norm_shared = _auto_scale_palette(
         combined, levels_base, colors_base, force_diverging=force_diverging)
 
-    for i, (slope, pval, ds_title, panel_label) in enumerate([
-        (obs_slope,   obs_pval,   title_obs,   "(a)"),
-        (model_slope, model_pval, title_model, "(b)"),
-    ]):
-        lvls, cmap, norm = lvls_shared, cmap_shared, norm_shared
+    # ── Panel specifications ──────────────────────────────────────────────────
+    panels = [
+        dict(da=obs_slope,   pval=obs_pval,   title=title_obs,   tag="(a)",
+             cmap=cmap_shared, norm=norm_shared, lvls=lvls_shared,
+             stipple=True,  cbar_lbl=cbar_label, fmt=tick_fmt),
+        dict(da=model_slope, pval=model_pval, title=title_model, tag="(b)",
+             cmap=cmap_shared, norm=norm_shared, lvls=lvls_shared,
+             stipple=True,  cbar_lbl=cbar_label, fmt=tick_fmt),
+    ]
+    if add_bias:
+        diff = model_slope - obs_slope
+        bias_lvls, _, bias_cmap, bias_norm = _auto_scale_palette(
+            diff.values, levels_base, colors_base, force_diverging=True)
+        panels.append(
+            dict(da=diff, pval=None, title="Bias (ICON − E-OBS)", tag="(c)",
+                 cmap=bias_cmap, norm=bias_norm, lvls=bias_lvls,
+                 stipple=False, cbar_lbl=f"Bias [{cbar_label}]", fmt=tick_fmt))
 
-        ax = fig.add_subplot(gs[0, 0 if i == 0 else 2], projection=PROJ)
+    n_panels = len(panels)
+
+    # ── Figure layout ─────────────────────────────────────────────────────────
+    if n_panels == 3:
+        fig = plt.figure(figsize=(15.0, 5.3))
+        gs  = GridSpec(1, 5, width_ratios=[1, 0.12, 1, 0.12, 1],
+                       left=0.03, right=0.95, top=0.91, bottom=0.04, wspace=0.0)
+        cols = [0, 2, 4]
+    else:
+        fig = plt.figure(figsize=(10.5, 5.5))
+        gs  = GridSpec(1, 3, width_ratios=[1, 0.08, 1],
+                       left=0.03, right=0.93, top=0.91, bottom=0.04, wspace=0.0)
+        cols = [0, 2]
+
+    fig.patch.set_facecolor("white")
+    if suptitle:
+        fig.suptitle(suptitle, fontsize=11, fontweight="normal", y=0.99)
+
+    for p, col in zip(panels, cols):
+        da   = p["da"]
+        cmap, norm, lvls = p["cmap"], p["norm"], p["lvls"]
+
+        ax = fig.add_subplot(gs[0, col], projection=PROJ)
         ax.set_extent(MAP_EXTENT, crs=PC)
         ax.set_facecolor("#d6e8f2")
         ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
         ax.add_feature(cfeature.BORDERS.with_scale("10m"),
                        linewidth=0.3, edgecolor="0.45", zorder=2)
 
-        fine    = interp_display(slope)
+        fine    = interp_display(da)
         de_mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
         arr     = apply_mask(fine.values, de_mask)
 
@@ -846,30 +847,31 @@ def plot_paired_trend_maps(
         ax.add_geometries(gdf.geometry, PC, facecolor="none",
                           edgecolor="#1a1a1a", linewidth=0.70, zorder=6)
 
-        de_mask_c  = build_mask(slope["lon"].values, slope["lat"].values, geom)
-        sig_mask   = pval.values < ALPHA
-        lo2d, la2d = np.meshgrid(slope["lon"].values, slope["lat"].values)
-        stip_mask  = sig_mask & de_mask_c
-        ax.scatter(lo2d[stip_mask], la2d[stip_mask],
-                   s=2.0, c="#1a1a1a", alpha=0.40, marker=".", zorder=7,
-                   rasterized=True, transform=PC)
+        de_mask_c = build_mask(da["lon"].values, da["lat"].values, geom)
 
-        n_de     = int(de_mask_c.sum())
-        sig_frac = stip_mask.sum() / n_de * 100 if n_de > 0 else 0.0
+        # Significance stippling — data panels only (not the bias panel)
+        if p["stipple"]:
+            sig_mask   = p["pval"].values < ALPHA
+            lo2d, la2d = np.meshgrid(da["lon"].values, da["lat"].values)
+            stip_mask  = sig_mask & de_mask_c
+            ax.scatter(lo2d[stip_mask], la2d[stip_mask],
+                       s=2.0, c="#1a1a1a", alpha=0.40, marker=".", zorder=7,
+                       rasterized=True, transform=PC)
+            n_de     = int(de_mask_c.sum())
+            sig_frac = stip_mask.sum() / n_de * 100 if n_de > 0 else 0.0
+            ax.text(0.97, 0.03, f"Sig. area: {sig_frac:.0f}%",
+                    transform=ax.transAxes, ha="right", va="bottom",
+                    fontsize=7.5, color="#222222",
+                    bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                              ec="#aaaaaa", alpha=0.92, lw=0.5))
 
-        ax.text(0.03, 0.97, panel_label, transform=ax.transAxes,
+        ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
                 ha="left", va="top", fontsize=11, fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.22", fc="white",
                           ec="#888888", alpha=0.92, lw=0.6))
-        ax.set_title(ds_title, fontsize=11, fontweight="bold", pad=6)
+        ax.set_title(p["title"], fontsize=11, fontweight="bold", pad=6)
 
-        ax.text(0.97, 0.03, f"Sig. area: {sig_frac:.0f}%",
-                transform=ax.transAxes, ha="right", va="bottom",
-                fontsize=7.5, color="#222222",
-                bbox=dict(boxstyle="round,pad=0.20", fc="white",
-                          ec="#aaaaaa", alpha=0.92, lw=0.5))
-
-        mean_v = float(np.nanmean(slope.values[de_mask_c]))
+        mean_v = float(np.nanmean(da.values[de_mask_c]))
         sign   = "+" if mean_v >= 0 else ""
         ax.text(0.03, 0.03, f"Mean: {sign}{mean_v:.3f}",
                 transform=ax.transAxes, ha="left", va="bottom",
@@ -882,11 +884,12 @@ def plot_paired_trend_maps(
         # Slim vertical colorbar — all boundary ticks labeled, rectangular ends
         cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
         cb  = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
-                           ticks=_smart_ticks(lvls), orientation="vertical", extend="neither")
+                           ticks=_smart_ticks(lvls), orientation="vertical",
+                           extend="neither")
         cb.ax.tick_params(labelsize=6, pad=2, length=3, width=0.5, direction="out")
-        cb.ax.yaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
+        cb.ax.yaxis.set_major_formatter(FormatStrFormatter(p["fmt"]))
         cb.outline.set_linewidth(0.5)
-        cb.set_label(cbar_label, fontsize=8, labelpad=4, fontweight="normal")
+        cb.set_label(p["cbar_lbl"], fontsize=8, labelpad=4, fontweight="normal")
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
@@ -1244,119 +1247,6 @@ def plot_germany_series(
              transform=ax2.transAxes, fontsize=6.5, color="0.55", va="top")
 
     plt.tight_layout(rect=[0, 0, 1, 0.97])
-    fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
-    plt.close(fig)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  NEW: Multi-panel precipitation extreme overview figure
-# ══════════════════════════════════════════════════════════════════════════════
-
-def plot_precipitation_overview(index_meta, gdf, geom, outfile):
-    """
-    Flagship multi-panel figure: trend maps for all precipitation indices.
-
-    Creates an N×2 grid (E-OBS left | ICON-CLM right) for N indices.
-    Per-row vertical colorbars on the right side.  Stippling for p < 0.05.
-    Designed to be the thesis overview figure for precipitation extremes.
-
-    Parameters
-    ----------
-    index_meta : dict[str, dict]
-        Keys: short index name.
-        Each value must contain:
-          obs_slope, mod_slope : xr.DataArray (lat, lon)
-          obs_pval,  mod_pval  : xr.DataArray (lat, lon)
-          levels, colors       : colormap specification
-          cbar_label, tick_fmt : colorbar formatting
-          long_name            : row label (e.g. "Rx1day [mm day⁻¹]")
-    gdf  : GeoDataFrame  — Germany boundary.
-    geom : Shapely geometry — for contour clipping.
-    outfile : str
-    """
-    PC   = ccrs.PlateCarree()
-    PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
-
-    n    = len(index_meta)
-    fig, axes = plt.subplots(n, 2, figsize=(8.8, n * 2.8),
-                              subplot_kw={"projection": PROJ})
-    fig.patch.set_facecolor("white")
-    fig.suptitle(
-        "JJA Precipitation Extreme Indices — Theil-Sen Trends 1950–2022\n"
-        "Stippling: statistically significant trend (MK p < 0.05, Yue-Wang correction)",
-        fontsize=9.5, fontweight="bold", y=0.998,
-    )
-
-    letters    = "abcdefghijklmnopqrstuvwxyz"
-    letter_idx = 0
-
-    for row, (name, d) in enumerate(index_meta.items()):
-        cmap = mcolors.ListedColormap(d["colors"])
-        norm = mcolors.BoundaryNorm(d["levels"], cmap.N)
-
-        for col, (slope, pval, ds_title) in enumerate([
-            (d["obs_slope"], d["obs_pval"], "E-OBS"),
-            (d["mod_slope"], d["mod_pval"], "ICON-CLM"),
-        ]):
-            ax = axes[row, col] if n > 1 else axes[col]
-            ax.set_extent(MAP_EXTENT, crs=PC)
-            ax.set_facecolor("#d6e8f2")
-            ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
-            ax.add_feature(cfeature.BORDERS.with_scale("10m"),
-                           linewidth=0.3, edgecolor="0.45", zorder=2)
-
-            fine = interp_display(slope)
-            mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
-            arr  = apply_mask(fine.values, mask)
-
-            ax.contourf(
-                fine["lon"].values, fine["lat"].values, arr,
-                levels=d["levels"], cmap=cmap, norm=norm,
-                transform=PC, extend="both", antialiased=True, zorder=3,
-            )
-            ax.add_geometries(gdf.geometry, PC, facecolor="none",
-                              edgecolor="black", linewidth=0.50, zorder=5)
-
-            # Stippling — Germany cells only
-            de_mask_c  = build_mask(slope["lon"].values, slope["lat"].values, geom)
-            sig_mask   = pval.values < ALPHA
-            lo2d, la2d = np.meshgrid(slope["lon"].values, slope["lat"].values)
-            stip_mask  = sig_mask & de_mask_c
-            ax.scatter(lo2d[stip_mask], la2d[stip_mask],
-                       s=0.35, c="#111111", alpha=0.26, zorder=6,
-                       rasterized=True, transform=PC)
-
-            ax.text(0.03, 0.97, f"({letters[letter_idx]})",
-                    transform=ax.transAxes, ha="left", va="top",
-                    fontsize=8, fontweight="bold",
-                    bbox=dict(boxstyle="round,pad=0.12", fc="white",
-                              ec="none", alpha=0.72))
-            letter_idx += 1
-
-            if row == 0:
-                ax.set_title(ds_title, fontsize=9, fontweight="bold", pad=3)
-
-            if col == 0:
-                ax.text(-0.12, 0.5, d["long_name"], transform=ax.transAxes,
-                        fontsize=7.5, va="center", ha="right", rotation=90)
-
-            style_axis(ax)
-
-            if col == 1:
-                cb_ax = ax.inset_axes([1.05, 0.0, 0.07, 1.0])
-                cb = ColorbarBase(
-                    cb_ax, cmap=cmap, norm=norm,
-                    boundaries=d["levels"], ticks=d["levels"],
-                    orientation="vertical", extend="both",
-                )
-                cb.ax.tick_params(labelsize=5.5, pad=1)
-                cb.ax.yaxis.set_major_formatter(FormatStrFormatter(d["tick_fmt"]))
-                cb.set_label(d["cbar_label"], fontsize=6, labelpad=3)
-
-    plt.subplots_adjust(
-        left=0.12, right=0.88, top=0.97, bottom=0.01,
-        hspace=0.07, wspace=0.12,
-    )
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
 

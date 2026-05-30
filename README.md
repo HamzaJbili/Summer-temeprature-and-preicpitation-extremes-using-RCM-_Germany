@@ -10,7 +10,7 @@
 
 This repository contains the complete Python analysis workflow for a master's thesis assessing **summer (JJA) temperature and precipitation trends and extremes over Germany** using high-resolution regional climate modelling.
 
-The study evaluates the performance of **ICON-CLM** (~12 km) against the **E-OBS** gridded observational dataset (v28e, 0.25°) over the period **1950–2022**. It computes **9 annual extreme indices** selected for their scientific relevance to Germany's summer hazards (heat waves, heavy precipitation, drought), applies non-parametric trend statistics (Theil-Sen + Mann-Kendall with Yue-Wang autocorrelation correction), and links extreme-summer patterns to atmospheric and land-surface process drivers. All figures are produced in **IPCC AR6 publication style**.
+The study evaluates the performance of **ICON-CLM** (~12 km) against the **E-OBS** gridded observational dataset (v28e, 0.25°) over the period **1950–2022**. It computes **8 annual extreme indices** selected for their scientific relevance to Germany's summer hazards (heat waves, heavy precipitation, drought), applies non-parametric trend statistics (Theil-Sen + Mann-Kendall with Yue-Wang autocorrelation correction), and links extreme-summer patterns to atmospheric and land-surface process drivers. All figures are produced in **IPCC AR6 publication style**.
 
 ---
 
@@ -36,7 +36,7 @@ The study evaluates the performance of **ICON-CLM** (~12 km) against the **E-OBS
 .
 ├── utils.py                  # Shared utilities (imported by all scripts)
 ├── script1_mean_climate.py   # JJA mean temperature and precipitation: climatology, bias, trends
-├── script2_extremes.py       # 9 annual extreme indices + trend maps + summary figures
+├── script2_extremes.py       # 8 annual extreme indices + trend maps + summary figures
 ├── script3_drivers.py        # Process-driver composite and correlation analysis
 │
 ├── requirements.txt          # Python dependencies
@@ -56,7 +56,7 @@ clear error if script 2 has not been run first.
 
 ---
 
-## Extreme Indices Computed (9 total)
+## Extreme Indices Computed (8 total)
 
 The index set is deliberately compact, retaining only indices with a clear physical
 interpretation, high signal-to-noise ratio in Germany's summer climate, and direct
@@ -84,16 +84,10 @@ and energy-demand impact assessments.
 
 | Index | Definition | Threshold / method | Hazard relevance |
 |---|---|---|---|
-| **R95p** | JJA wet days with P > local 95th pct wet-day distribution | 95th pct, 1961–1990 wet days | Heavy precipitation frequency |
+| **R10mm** | JJA days with P ≥ 10 mm day⁻¹ | Fixed 10 mm threshold | Heavy precipitation frequency |
 | **Rx1day** | Annual maximum 1-day precipitation (mm day⁻¹) | — | Peak convective / flash-flood intensity |
 | **Rx5day** | Annual maximum consecutive 5-day precipitation (mm) | Sliding 5-day window | Basin-scale river flooding |
 | **SDII** | Mean precipitation on wet days (mm wet-day⁻¹) | Wet day: P ≥ 1 mm day⁻¹ | Per-event intensity change independent of frequency |
-
-### Precipitation — Concentration (1)
-
-| Index | Definition | Threshold / method | Hazard relevance |
-|---|---|---|---|
-| **R95pTOT** | Fraction (%) of seasonal wet-day precip from very heavy events | R95p threshold | Precipitation concentration / intensification signal |
 
 ### Precipitation — Drought (1)
 
@@ -219,9 +213,9 @@ python script2_extremes.py
 **Outputs** → `output_extremes/`
 ```
 figures/
-  {index}_trend_map.png          ← paired E-OBS / ICON-CLM trend map (9 indices)
-  {index}_germany_series.png     ← Germany-average time series with rolling means (9 indices)
-  precipitation_overview.png     ← flagship multi-panel figure: all 6 precip indices
+  {index}_trend_map.png          ← paired E-OBS / ICON-CLM trend map (8 indices)
+  {index}_germany_series.png     ← Germany-average time series with trend lines (8 indices)
+  T90p_exceedance_days_spatial_mean.png  ← T90p mean field (E-OBS | ICON-CLM | bias)
   taylor_diagram.png             ← ICON-CLM model skill (correlation / normalised std dev)
   trend_heatmap.png              ← all-index trend summary with significance markers
 tables/
@@ -263,25 +257,18 @@ to the observed range; panel (c) uses a symmetric diverging colormap centred on 
 Two-panel figure (E-OBS left, ICON-CLM right) showing the Theil-Sen slope per
 decade at each grid cell. Significance stippling marks grid cells where the
 Mann-Kendall p-value < 0.05. Colourmap: BrBG for precipitation (wetter = green),
-RdBu_r for temperature (warmer = red).
+RdBu_r for temperature (warmer = red). T90p additionally carries a third
+**Bias (ICON − E-OBS)** panel.
 
 ### Time series (`{index}_germany_series.png`)
 
-Two-panel figure:
-- **Top:** Annual Germany-average values with 5-yr (dashed) and 11-yr (bold)
-  running means. Trend annotation shows Sen slope per decade and MK p-value.
-- **Bottom:** Anomalies relative to 1991-2020. E-OBS bars coloured red (positive)
-  / blue (negative); ICON-CLM stepped line; 11-yr E-OBS running mean overlaid.
-
-### Precipitation overview (`precipitation_overview.png`)
-
-Flagship multi-panel N×2 figure (E-OBS left, ICON-CLM right) covering all
-6 precipitation indices in one publication-ready figure.  Vertical colorbars
-per row; stippling for p < 0.05.
+Single-panel figure (script 2): annual Germany-average values for E-OBS (black)
+and ICON-CLM (red) as thin lines, with the Theil-Sen trend per dataset drawn as
+bold dashed lines and the slope per decade annotated in the legend.
 
 ### Taylor diagram (`taylor_diagram.png`)
 
-Polar diagram comparing ICON-CLM to E-OBS for all 9 indices simultaneously.
+Polar diagram comparing ICON-CLM to E-OBS for all 8 indices simultaneously.
 Each point's angular position encodes the Pearson correlation; radial position
 encodes the normalised standard deviation (σ_model / σ_obs). RMSE contours
 are drawn from the reference point (E-OBS = ★ at r=1, θ=0).
@@ -335,8 +322,8 @@ pre-whitening (TFPW) to correct for positive lag-1 autocorrelation that would
 otherwise inflate the significance of the trend statistic (Yue & Wang, 2004).
 Falls back to the original MK test if the correction fails for a given cell.
 
-**Wet-day restriction:** R95p, SDII, and R95pTOT use a wet-day threshold of
-P ≥ 1 mm day⁻¹, consistent with ETCCDI definitions (Zhang et al., 2011).
+**Wet-day restriction:** SDII uses a wet-day threshold of P ≥ 1 mm day⁻¹,
+consistent with ETCCDI definitions (Zhang et al., 2011).
 
 **Rx5day computation:** The 5-day rolling sum is computed using a sliding window
 approach (equivalent to `pandas.rolling(5).sum()`), with the maximum over all
