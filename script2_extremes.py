@@ -393,6 +393,58 @@ def save_index(da, name, dataset_label):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  Physical-bounds validation
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Expected physical ranges for each index (min, max).
+# Values outside these bounds indicate a unit error, computation bug,
+# or data quality issue — not a climate signal.
+_PHYS_BOUNDS = {
+    "T90p_exceedance_days": (0,   92),   # days summer⁻¹  (JJA ≤ 92 days)
+    "Heatwave_number":      (0,   30),   # events summer⁻¹
+    "Heatwave_duration":    (3,   92),   # days event⁻¹   (min = HW_MIN_LEN)
+    "CDD":                  (0,   92),   # days summer⁻¹
+    "SDII":                 (1,  100),   # mm wet-day⁻¹   (> wet threshold, < extreme)
+    "SPI":                  (-4,   4),   # dimensionless   (SPI outside ±4 is exceedingly rare)
+}
+
+def validate_index(name, annual_obs, annual_model):
+    """
+    Print a physical-bounds and climatology check for one index.
+
+    Flags:
+      FAIL  — values outside the physically possible range (unit error / bug)
+      WARN  — values outside the expected climatological range (unusual but possible)
+      OK    — all values within expected range
+    """
+    bounds = _PHYS_BOUNDS.get(name)
+    if bounds is None:
+        return
+
+    lo, hi = bounds
+    issues = []
+    for label, da in [("E-OBS", annual_obs), ("ICON", annual_model)]:
+        v = da.values[np.isfinite(da.values)]
+        if len(v) == 0:
+            issues.append(f"  {label}: no valid values — check data loading")
+            continue
+        vmin, vmax, vmean = float(v.min()), float(v.max()), float(v.mean())
+        if vmin < lo or vmax > hi:
+            issues.append(
+                f"  FAIL  {label}: range [{vmin:.2f}, {vmax:.2f}]  "
+                f"outside physical bounds [{lo}, {hi}]  mean={vmean:.3f}"
+            )
+        else:
+            issues.append(
+                f"  OK    {label}: range [{vmin:.2f}, {vmax:.2f}]  "
+                f"within bounds [{lo}, {hi}]  mean={vmean:.3f}"
+            )
+    print(f"  Validation ({name}):")
+    for line in issues:
+        print(line)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  Core processing pipeline (one call per index)
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -442,6 +494,20 @@ def process_index(
     print(f"  • {name}: computing trend maps …")
     trend_obs   = compute_trend_maps(annual_obs)
     trend_model = compute_trend_maps(annual_model)
+
+    # ── Spatial pattern correlation of trend fields ───────────────────────────
+    # Pearson r between the ICON and E-OBS Theil-Sen slope at every grid cell.
+    # High r (> 0.5) means the model reproduces WHERE trends are strong/weak.
+    # Low r (< 0.2) means the model's spatial trend pattern is uncorrelated
+    # with observations — a direct, quantitative measure of model weakness.
+    from scipy.stats import pearsonr as _pearsonr
+    _obs_t  = trend_obs["sen_slope"].values.ravel()
+    _mod_t  = trend_model["sen_slope"].values.ravel()
+    _valid  = np.isfinite(_obs_t) & np.isfinite(_mod_t)
+    if _valid.sum() >= 20:
+        _r_pat, _p_pat = _pearsonr(_obs_t[_valid], _mod_t[_valid])
+    else:
+        _r_pat, _p_pat = np.nan, np.nan
 
     # ── 1. Trend map: E-OBS | Diff (ICON − E-OBS) ────────────────────────────
     # diff_colors uses the universal blue-white-red palette so the Diff panel
@@ -517,11 +583,20 @@ def process_index(
         "EOBS_series_MK_p":             _fmt4(obs_stats["mk_p"]),
         "ICON_series_MK_p":             _fmt4(model_stats["mk_p"]),
 
-        # Model–observation agreement
+        # Model–observation agreement (time series)
         "series_mean_bias_ICON_minus_EOBS": _fmt(
             float(np.nanmean(model_series.values - obs_series.values))),
         "series_RMSE": _fmt(rmse(model_series.values, obs_series.values)),
+
+        # Spatial pattern correlation of trend fields
+        # r close to 1  → model reproduces WHERE trends are strong/weak
+        # r close to 0  → model trend pattern is spatially uncorrelated with E-OBS
+        # r negative     → model reverses the observed trend pattern (spatial inversion)
+        "trend_spatial_pattern_r":   _fmt(_r_pat),
+        "trend_spatial_pattern_p":   _fmt4(_p_pat),
     })
+    _skill = "weak" if abs(_r_pat) < 0.3 else ("moderate" if abs(_r_pat) < 0.6 else "good")
+    print(f"    trend spatial pattern r = {_r_pat:+.3f}  (p={_p_pat:.4f})  → {_skill} model skill")
 
     # ── 5. Store for summary figures (Taylor diagram, trend heatmap) ───────────
     ts_obs_store[name] = obs_series.values
@@ -584,6 +659,7 @@ if __name__ == "__main__":
     t90_days_obs   = annual_exceedance_days(tas_obs,   t90_obs)
     save_index(t90_days_model, "T90p_days", "ICON")
     save_index(t90_days_obs,   "T90p_days", "EOBS")
+    validate_index("T90p_exceedance_days", t90_days_obs, t90_days_model)
 
     process_index(
         name="T90p_exceedance_days",
@@ -631,6 +707,7 @@ if __name__ == "__main__":
     hwn_obs   = annual_heatwave_number(tas_obs,   t90_obs)
     save_index(hwn_model, "HWN", "ICON")
     save_index(hwn_obs,   "HWN", "EOBS")
+    validate_index("Heatwave_number", hwn_obs, hwn_model)
 
     process_index(
         name="Heatwave_number",
@@ -664,6 +741,7 @@ if __name__ == "__main__":
     hwd_obs   = annual_hwd(tas_obs,   t90_obs)
     save_index(hwd_model, "HWD", "ICON")
     save_index(hwd_obs,   "HWD", "EOBS")
+    validate_index("Heatwave_duration", hwd_obs, hwd_model)
 
     process_index(
         name="Heatwave_duration",
@@ -703,6 +781,7 @@ if __name__ == "__main__":
     sdii_obs   = annual_sdii(pr_obs)
     save_index(sdii_model, "SDII", "ICON")
     save_index(sdii_obs,   "SDII", "EOBS")
+    validate_index("SDII", sdii_obs, sdii_model)
 
     process_index(
         name="SDII",
@@ -740,6 +819,7 @@ if __name__ == "__main__":
     cdd_obs   = annual_cdd(pr_obs)
     save_index(cdd_model, "CDD", "ICON")
     save_index(cdd_obs,   "CDD", "EOBS")
+    validate_index("CDD", cdd_obs, cdd_model)
 
     process_index(
         name="CDD",
@@ -771,6 +851,7 @@ if __name__ == "__main__":
     spi_obs   = annual_spi_jja(pr_obs)
     save_index(spi_model, "SPI", "ICON")
     save_index(spi_obs,   "SPI", "EOBS")
+    validate_index("SPI", spi_obs, spi_model)
 
     process_index(
         name="SPI",
