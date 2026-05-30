@@ -1318,6 +1318,48 @@ def plot_germany_series(
 #  NEW: Taylor diagram
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Canonical short labels for the summary figures (Taylor diagram, heatmap)
+INDEX_SHORT_NAMES = {
+    "T90p_exceedance_days": "T90p",
+    "Heatwave_number":      "HWN",
+    "Heatwave_duration":    "HWD",
+    "SDII":                 "SDII",
+    "CDD":                  "CDD",
+    "SPI":                  "SPI",
+}
+
+# Unicode superscript characters → plain text (for mathtext conversion)
+_SUP_MAP = {
+    "⁻": "-", "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4",
+    "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9",
+}
+_SUP_CHARS = "".join(_SUP_MAP.keys())
+
+
+def _short_index_name(name):
+    """Map a long internal index id to a compact label for summary figures."""
+    if name in INDEX_SHORT_NAMES:
+        return INDEX_SHORT_NAMES[name]
+    return (name.replace("_exceedance_days", "")
+                .replace("_days", "")
+                .replace("_number", " N")
+                .replace("_duration", " D"))
+
+
+def _units_to_mathtext(s):
+    """
+    Convert Unicode superscripts (e.g. 'days event⁻¹') into matplotlib
+    mathtext ('days event$^{-1}$') so the minus sign renders correctly.
+    """
+    import re
+
+    def _repl(m):
+        body = "".join(_SUP_MAP.get(c, c) for c in m.group(0))
+        return r"$^{%s}$" % body
+
+    return re.sub(f"[{_SUP_CHARS}]+", _repl, s)
+
+
 def taylor_diagram(obs_dict, mod_dict, outfile,
                    title="Model Skill — ICON-CLM vs E-OBS (Germany average)"):
     """
@@ -1352,6 +1394,8 @@ def taylor_diagram(obs_dict, mod_dict, outfile,
     if not names:
         warnings.warn("taylor_diagram: no valid index pairs found; skipping.")
         return
+
+    from matplotlib.lines import Line2D
 
     max_std = min(max(max(norm_stds) * 1.15, 1.3), 2.5)
     theta_q = np.linspace(0, np.pi / 2, 300)   # quarter-circle sweep
@@ -1415,21 +1459,32 @@ def taylor_diagram(obs_dict, mod_dict, outfile,
     ax.text(1.04, 0.05, "E-OBS\n(ref.)", fontsize=7.5, color="0.25",
             va="bottom")
 
-    # ── Model index markers ────────────────────────────────────────────────────
-    palette = plt.cm.tab10(np.linspace(0, 1, len(names)))
+    # ── Model index markers (numbered) + side legend ─────────────────────────
+    # Each index is drawn as a numbered disc; a legend resolves number → name,
+    # correlation and normalised σ.  This avoids label overlap when several
+    # indices fall close together (the failure mode of on-marker text labels).
+    palette = plt.cm.tab10(np.linspace(0, 1, 10))
+    legend_handles = []
     for i, (name, corr, nstd) in enumerate(zip(names, corrs, norm_stds)):
         ang = np.arccos(corr)
         x = nstd * np.cos(ang)
         y = nstd * np.sin(ang)
-        ax.plot(x, y, "o", color=palette[i], ms=9, zorder=7,
-                markeredgecolor="k", markeredgewidth=0.5)
-        short = (name.replace("_exceedance_days", "")
-                     .replace("_days", "")
-                     .replace("_number", "")
-                     .replace("_duration", ""))
-        ax.text(x + 0.04, y + 0.04, short,
-                fontsize=7.5, ha="left", va="bottom",
-                color=palette[i], fontweight="bold")
+        col = palette[i % 10]
+        ax.plot(x, y, "o", color=col, ms=12, zorder=7,
+                markeredgecolor="k", markeredgewidth=0.6)
+        ax.text(x, y, str(i + 1), fontsize=7, ha="center", va="center",
+                color="white", fontweight="bold", zorder=8)
+        short = _short_index_name(name)
+        legend_handles.append(
+            Line2D([0], [0], marker="o", linestyle="none", color=col,
+                   markeredgecolor="k", markeredgewidth=0.5, markersize=8,
+                   label=f"{i + 1}.  {short}   (r={corr:.2f}, σ*={nstd:.2f})"))
+
+    ax.legend(handles=legend_handles, loc="upper left",
+              bbox_to_anchor=(1.01, 1.0), fontsize=7.5, frameon=True,
+              framealpha=0.95, edgecolor="0.7", handletextpad=0.4,
+              borderpad=0.6, labelspacing=0.6, title="Index (σ* = norm. SD)",
+              title_fontsize=8)
 
     # ── Axes formatting ────────────────────────────────────────────────────────
     ax.set_xlim(-0.08, max_std * 1.20)
@@ -1484,10 +1539,16 @@ def plot_trend_heatmap(heatmap_rows, outfile,
     maxabs[maxabs < 1e-9] = 1.0
     heat = np.column_stack([obs_sl / maxabs, mod_sl / maxabs])  # (n, 2)
 
-    # Row labels: "Index name  [unit]"
-    row_labels = [
-        f"{d['name']}  [{d['trend_unit']}]" for d in heatmap_rows
-    ]
+    # Row labels: "Index name  [trend unit]".  Strip any unit bracket already
+    # present in the display name to avoid a duplicate (e.g. the long_name
+    # carries "[days summer⁻¹]" while trend_unit is "days decade⁻¹"), and
+    # convert Unicode superscripts to mathtext so the minus sign renders.
+    import re
+    row_labels = []
+    for d in heatmap_rows:
+        base = re.sub(r"\s*\[[^\]]*\]\s*$", "", d["name"]).strip()
+        label = f"{base}  [{d['trend_unit']}]"
+        row_labels.append(_units_to_mathtext(label))
 
     fig_h  = max(4.5, 0.60 * n + 1.8)
     fig, ax = plt.subplots(figsize=(7.5, fig_h))
