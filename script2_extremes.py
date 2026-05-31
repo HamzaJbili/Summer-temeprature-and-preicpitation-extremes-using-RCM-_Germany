@@ -16,7 +16,7 @@ Indices computed (6 total)
   Precipitation — Drought / Intensity (3)
   ┌─────────────────────────────────────────────────────────────────────────┐
   │ CDD     Maximum consecutive dry days per JJA season                    │
-  │ SDII    Simple Daily Intensity Index (mm wet-day⁻¹)                    │
+  │ SDII    Simple Daily Intensity Index (mm/wet-day)                       │
   │ SPI     Standardised Precipitation Index (JJA seasonal total)          │
   └─────────────────────────────────────────────────────────────────────────┘
 
@@ -50,7 +50,7 @@ Methodological choices
       for extreme-trend studies; ensures exceedance-count trends reflect
       climate change relative to a pre-acceleration baseline)
   Anomaly reference period                : 1991-2020  (current WMO normal)
-  Wet-day threshold                       : P ≥ 1.0 mm day⁻¹
+  Wet-day threshold                       : P ≥ 1.0 mm/day
   Heatwave minimum length                 : ≥ 3 consecutive hot days
   Trend method                            : Theil-Sen slope (per decade) +
       Mann-Kendall with Yue-Wang trend-free pre-whitening (TFPW) to account
@@ -100,6 +100,7 @@ from utils import (
     set_ipcc_style, plot_obs_bias_maps, plot_germany_series,
     taylor_diagram, plot_trend_heatmap,
     plot_climatology_maps,
+    plot_grouped_trend_maps, plot_three_panel_trend_maps,
     # constants
     REF_START, REF_END, ANOM_START, ANOM_END, DPI, DRY_DAY_MAX, DIFF_COLORS,
 )
@@ -155,9 +156,9 @@ CDD_COLORS = [
 TEMP_LEVELS = [-8, -6, -4, -2, -1,    0,   1,    2,    4,    6,    8]  # days/decade
 HW_LEVELS   = [-2.0, -1.5, -1.0, -0.5, -0.25, 0, 0.25, 0.5, 1.0, 1.5, 2.0]
 HWD_LEVELS  = [-3.0, -2.0, -1.5, -1.0, -0.5,  0,  0.5, 1.0, 1.5, 2.0, 3.0]
-CDD_LEVELS  = [-3.0, -2.0, -1.5, -1.0, -0.5,  0,  0.5, 1.0, 1.5, 2.0, 3.0]  # days/decade
+CDD_LEVELS  = [-3.0, -2.0, -1.5, -1.0, -0.5,  0,  0.5, 1.0, 1.5, 2.0, 3.0]  # days/decade (unchanged)
 SDII_LEVELS = [-1.0, -0.75, -0.5, -0.25, -0.1, 0, 0.1, 0.25, 0.5, 0.75, 1.0]
-SPI_LEVELS  = [-0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5]  # SPI/decade
+SPI_LEVELS  = [-0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5]  # SPI/decade (unchanged)
 
 # ── Mean-field (climatology) palettes and levels ───────────────────────────────
 # T90p threshold — actual 90th-pct JJA Tmean values (°C; adjust if data is in K)
@@ -186,34 +187,34 @@ SDII_CLIM_COLORS = [
     "#f0f9ff", "#d0e7f5", "#a8d1e8", "#7db8d8", "#4f99c4",
     "#2b7ab3", "#1560a0", "#0b4d89", "#073b71", "#042a58",
 ]
-SDII_CLIM_LEVELS = [3, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 9]  # mm/wet-day
+SDII_CLIM_LEVELS = [3, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 9]  # mm/wet-day (unchanged)
 
 # CDD mean — max consecutive dry days per summer
 CDD_CLIM_COLORS = [
     "#fff7bc", "#fee391", "#fec44f", "#fe9929", "#ec7014",
     "#cc4c02", "#993404", "#772b00", "#5a1f00", "#3d1200",
 ]
-CDD_CLIM_LEVELS = [4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16]  # days
+CDD_CLIM_LEVELS = [4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16]  # days/summer
 
 # Sequential warm palette + levels for the T90p mean spatial-distribution map
-# (climatological hot-day frequency, days summer⁻¹; not a trend → sequential)
+# (climatological hot-day frequency, days/summer; not a trend → sequential)
 T90P_DIST_COLORS = [
     "#ffffcc", "#ffeda0", "#fed976", "#feb24c", "#fd8d3c",
     "#fc4e2a", "#e31a1c", "#bd0026", "#800026", "#4d0019",
 ]
-T90P_DIST_LEVELS = [5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 18]  # days summer⁻¹
+T90P_DIST_LEVELS = [5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 18]  # days/summer
 
 # ── Bias colorbar levels for climatology maps (ICON − E-OBS, explicit / fixed) ─
 # Using explicit fixed levels (not auto-scaled) ensures that coastal outlier
 # cells do not distort the colour scale over the German interior.
 # Adjust after first run if needed; extend="both" clips values outside the range.
 BIAS_DIV_COLORS = DIFF_COLORS   # same universal blue-white-red for all bias panels
-T90P_DIST_BIAS_LEVELS = [-4, -3, -2, -1, -0.5, 0, 0.5, 1, 2, 3, 4]   # days summer⁻¹
-T90P_THR_BIAS_LEVELS  = [-3, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 3]  # °C
+T90P_DIST_BIAS_LEVELS = [-4, -3, -2, -1, -0.5, 0, 0.5, 1, 2, 3, 4]   # days/summer
+T90P_THR_BIAS_LEVELS  = [-3, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 3]  # deg C
 HWN_BIAS_LEVELS  = [-0.6, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.6]
 HWD_BIAS_LEVELS  = [-2.0, -1.5, -1.0, -0.5, -0.25, 0, 0.25, 0.5, 1.0, 1.5, 2.0]
 SDII_BIAS_LEVELS = [-2.0, -1.5, -1.0, -0.5, -0.25, 0, 0.25, 0.5, 1.0, 1.5, 2.0]
-CDD_BIAS_LEVELS  = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]             # days summer⁻¹
+CDD_BIAS_LEVELS  = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]             # days/summer
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -400,11 +401,11 @@ def save_index(da, name, dataset_label):
 # Values outside these bounds indicate a unit error, computation bug,
 # or data quality issue — not a climate signal.
 _PHYS_BOUNDS = {
-    "T90p_exceedance_days": (0,   92),   # days summer⁻¹  (JJA ≤ 92 days)
-    "Heatwave_number":      (0,   30),   # events summer⁻¹
-    "Heatwave_duration":    (3,   92),   # days event⁻¹   (min = HW_MIN_LEN)
-    "CDD":                  (0,   92),   # days summer⁻¹
-    "SDII":                 (1,  100),   # mm wet-day⁻¹   (> wet threshold, < extreme)
+    "T90p_exceedance_days": (0,   92),   # days/summer  (JJA ≤ 92 days)
+    "Heatwave_number":      (0,   30),   # events/summer
+    "Heatwave_duration":    (3,   92),   # days/event   (min = HW_MIN_LEN)
+    "CDD":                  (0,   92),   # days/summer
+    "SDII":                 (1,  100),   # mm/wet-day   (> wet threshold, < extreme)
     "SPI":                  (-4,   4),   # dimensionless   (SPI outside ±4 is exceedingly rare)
 }
 
@@ -478,8 +479,8 @@ def process_index(
     annual_model, annual_obs : xr.DataArray (year, lat, lon)
     thr_model, thr_obs : xr.DataArray (lat, lon) or None
         Percentile threshold; None for fixed-threshold indices (Rx1day, etc.)
-    unit        : str — index unit (e.g. "days summer⁻¹")
-    trend_unit  : str — trend unit (e.g. "days decade⁻¹")
+    unit        : str — index unit (e.g. "days/summer")
+    trend_unit  : str — trend unit (e.g. "days/decade")
     trend_levels: list — colormap boundary levels
     colors      : list — colormap colours (len = len(trend_levels)-1)
     tick_fmt    : str — colorbar tick format string
@@ -663,10 +664,10 @@ if __name__ == "__main__":
 
     process_index(
         name="T90p_exceedance_days",
-        long_name="T90p — Hot days > 90th pct Tmean [days summer⁻¹]",
+        long_name="T90p — Hot days > 90th pct Tmean [days/summer]",
         annual_model=t90_days_model, annual_obs=t90_days_obs,
         thr_model=t90_model,         thr_obs=t90_obs,
-        unit="days summer⁻¹",        trend_unit="days decade⁻¹",
+        unit="days/summer",          trend_unit="days/decade",
         trend_levels=TEMP_LEVELS,    colors=TEMP_COLORS, tick_fmt="%.1f",
         gdf=gdf, geom=geom,
         summary_rows=summary_rows,
@@ -682,8 +683,8 @@ if __name__ == "__main__":
         gdf=gdf, geom=geom,
         outfile  = os.path.join(FIGDIR, "T90p_exceedance_days_spatial_mean.png"),
         levels   = T90P_DIST_LEVELS, colors=T90P_DIST_COLORS,
-        cbar_label = "T90p hot-day frequency [days summer⁻¹]", tick_fmt="%.0f",
-        suptitle = "T90p — Hot days > 90th pct Tmean — Mean 1950–2022",
+        cbar_label = "T90p hot-day frequency [days/summer]", tick_fmt="%.0f",
+        suptitle = "T90p — Mean hot-day frequency 1950–2022",
         bias_levels=T90P_DIST_BIAS_LEVELS, bias_colors=BIAS_DIV_COLORS,
         bias_tick_fmt="%.1f",
     )
@@ -695,8 +696,8 @@ if __name__ == "__main__":
         gdf=gdf, geom=geom,
         outfile  = os.path.join(FIGDIR, "T90p_threshold_spatial.png"),
         levels   = T90P_THR_LEVELS, colors=T90P_THR_COLORS,
-        cbar_label = "90th-pct Tmean threshold [°C]", tick_fmt="%.1f",
-        suptitle = "T90p threshold — 90th-pct JJA Tmean 1961–1990",
+        cbar_label = "90th-pct Tmean threshold [deg C]", tick_fmt="%.1f",
+        suptitle = "T90p — 90th-pct Tmean threshold 1961–1990",
         bias_levels=T90P_THR_BIAS_LEVELS, bias_colors=BIAS_DIV_COLORS,
         bias_tick_fmt="%.2f",
     )
@@ -711,10 +712,10 @@ if __name__ == "__main__":
 
     process_index(
         name="Heatwave_number",
-        long_name="HWN — Heatwave Number [events summer⁻¹]",
+        long_name="HWN — Heatwave Number [events/summer]",
         annual_model=hwn_model, annual_obs=hwn_obs,
         thr_model=t90_model,    thr_obs=t90_obs,
-        unit="events summer⁻¹", trend_unit="events decade⁻¹",
+        unit="events/summer",   trend_unit="events/decade",
         trend_levels=HW_LEVELS, colors=TEMP_COLORS, tick_fmt="%.2f",
         gdf=gdf, geom=geom,
         summary_rows=summary_rows,
@@ -727,7 +728,7 @@ if __name__ == "__main__":
         gdf=gdf, geom=geom,
         outfile  = os.path.join(FIGDIR, "Heatwave_number_spatial_mean.png"),
         levels   = HWN_CLIM_LEVELS, colors=HWN_CLIM_COLORS,
-        cbar_label = "HWN mean [events summer⁻¹]", tick_fmt="%.1f",
+        cbar_label = "HWN mean [events/summer]", tick_fmt="%.1f",
         suptitle = "HWN — Mean heatwave number 1950–2022",
         bias_levels=HWN_BIAS_LEVELS, bias_colors=BIAS_DIV_COLORS,
         bias_tick_fmt="%.2f",
@@ -745,10 +746,10 @@ if __name__ == "__main__":
 
     process_index(
         name="Heatwave_duration",
-        long_name="HWD — Mean Heatwave Duration [days event⁻¹]",
+        long_name="HWD — Mean Heatwave Duration [days/event]",
         annual_model=hwd_model, annual_obs=hwd_obs,
         thr_model=t90_model,    thr_obs=t90_obs,
-        unit="days event⁻¹",    trend_unit="days event⁻¹ decade⁻¹",
+        unit="days/event",      trend_unit="days/event/decade",
         trend_levels=HWD_LEVELS, colors=TEMP_COLORS, tick_fmt="%.2f",
         gdf=gdf, geom=geom,
         summary_rows=summary_rows,
@@ -761,10 +762,28 @@ if __name__ == "__main__":
         gdf=gdf, geom=geom,
         outfile  = os.path.join(FIGDIR, "Heatwave_duration_spatial_mean.png"),
         levels   = HWD_CLIM_LEVELS, colors=HWD_CLIM_COLORS,
-        cbar_label = "HWD mean [days event⁻¹]", tick_fmt="%.1f",
+        cbar_label = "HWD mean [days/event]", tick_fmt="%.1f",
         suptitle = "HWD — Mean heatwave duration 1950–2022",
         bias_levels=HWD_BIAS_LEVELS, bias_colors=BIAS_DIV_COLORS,
         bias_tick_fmt="%.2f",
+    )
+
+    # ── Combined heatwave trend figure (HWN + HWD, 2 rows × 2 cols) ──────────
+    print("Heatwave: generating combined HWN+HWD trend map …")
+    plot_grouped_trend_maps(
+        indices=[
+            dict(annual_obs=hwn_obs, annual_model=hwn_model,
+                 obs_levels=HW_LEVELS, obs_colors=TEMP_COLORS,
+                 trend_unit="events/decade", tick_fmt="%.2f",
+                 row_label="HWN — Heatwave Number"),
+            dict(annual_obs=hwd_obs, annual_model=hwd_model,
+                 obs_levels=HWD_LEVELS, obs_colors=TEMP_COLORS,
+                 trend_unit="days/event/decade", tick_fmt="%.2f",
+                 row_label="HWD — Mean Duration"),
+        ],
+        gdf=gdf, geom=geom,
+        outfile=os.path.join(FIGDIR, "HW_combined_trend_map.png"),
+        suptitle="Heatwave Trends 1950–2022 — HWN and HWD",
     )
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -785,15 +804,23 @@ if __name__ == "__main__":
 
     process_index(
         name="SDII",
-        long_name="SDII — Simple Daily Intensity Index [mm wet-day⁻¹]",
+        long_name="SDII — Simple Daily Intensity Index [mm/wet-day]",
         annual_model=sdii_model, annual_obs=sdii_obs,
         thr_model=None,           thr_obs=None,
-        unit="mm wet-day⁻¹",      trend_unit="mm wet-day⁻¹ decade⁻¹",
+        unit="mm/wet-day",        trend_unit="mm/wet-day/decade",
         trend_levels=SDII_LEVELS,  colors=PREC_COLORS, tick_fmt="%.2f",
         gdf=gdf, geom=geom,
         summary_rows=summary_rows,
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
         heatmap_rows=heatmap_rows,
+    )
+    plot_three_panel_trend_maps(
+        annual_obs=sdii_obs, annual_model=sdii_model,
+        gdf=gdf, geom=geom,
+        outfile=os.path.join(FIGDIR, "SDII_trend_map_3panel.png"),
+        obs_levels=SDII_LEVELS, obs_colors=PREC_COLORS,
+        trend_unit="mm/wet-day/decade", tick_fmt="%.2f",
+        suptitle="SDII — Theil-Sen Trend 1950–2022",
     )
     plot_climatology_maps(
         obs_clim = sdii_obs.mean("year",   skipna=True),
@@ -801,7 +828,7 @@ if __name__ == "__main__":
         gdf=gdf, geom=geom,
         outfile  = os.path.join(FIGDIR, "SDII_spatial_mean.png"),
         levels   = SDII_CLIM_LEVELS, colors=SDII_CLIM_COLORS,
-        cbar_label = "SDII mean [mm wet-day⁻¹]", tick_fmt="%.1f",
+        cbar_label = "SDII mean [mm/wet-day]", tick_fmt="%.1f",
         suptitle = "SDII — Mean daily intensity 1950–2022",
         bias_levels=SDII_BIAS_LEVELS, bias_colors=BIAS_DIV_COLORS,
         bias_tick_fmt="%.2f",
@@ -823,10 +850,10 @@ if __name__ == "__main__":
 
     process_index(
         name="CDD",
-        long_name="CDD — Consecutive dry days [days summer⁻¹]",
+        long_name="CDD — Consecutive dry days [days/summer]",
         annual_model=cdd_model, annual_obs=cdd_obs,
         thr_model=None,          thr_obs=None,
-        unit="days summer⁻¹",    trend_unit="days decade⁻¹",
+        unit="days/summer",      trend_unit="days/decade",
         trend_levels=CDD_LEVELS, colors=CDD_COLORS, tick_fmt="%.2f",
         gdf=gdf, geom=geom,
         summary_rows=summary_rows,
@@ -839,8 +866,8 @@ if __name__ == "__main__":
         gdf=gdf, geom=geom,
         outfile  = os.path.join(FIGDIR, "CDD_spatial_mean.png"),
         levels   = CDD_CLIM_LEVELS, colors=CDD_CLIM_COLORS,
-        cbar_label = "CDD mean [days summer⁻¹]", tick_fmt="%.0f",
-        suptitle = "CDD — Mean max consecutive dry days 1950–2022",
+        cbar_label = "CDD mean [days/summer]", tick_fmt="%.0f",
+        suptitle = "CDD — Mean climatology 1950–2022",
         bias_levels=CDD_BIAS_LEVELS, bias_colors=BIAS_DIV_COLORS,
         bias_tick_fmt="%.1f",
     )
@@ -858,12 +885,20 @@ if __name__ == "__main__":
         long_name="SPI — Standardised Precipitation Index [dimensionless]",
         annual_model=spi_model, annual_obs=spi_obs,
         thr_model=None,          thr_obs=None,
-        unit="SPI [-]",          trend_unit="SPI per decade",
+        unit="SPI",              trend_unit="SPI/decade",
         trend_levels=SPI_LEVELS,  colors=PREC_COLORS, tick_fmt="%.2f",
         gdf=gdf, geom=geom,
         summary_rows=summary_rows,
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
         heatmap_rows=heatmap_rows,
+    )
+    plot_three_panel_trend_maps(
+        annual_obs=spi_obs, annual_model=spi_model,
+        gdf=gdf, geom=geom,
+        outfile=os.path.join(FIGDIR, "SPI_trend_map_3panel.png"),
+        obs_levels=SPI_LEVELS, obs_colors=PREC_COLORS,
+        trend_unit="SPI/decade", tick_fmt="%.2f",
+        suptitle="SPI — Theil-Sen Trend 1950–2022",
     )
     # SPI mean ≈ 0 by construction — no climatology map
 
