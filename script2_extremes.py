@@ -93,7 +93,7 @@ from utils import (
     load_field, keep_jja, reference_mean, compute_anomalies,
     area_mean, rmse, compute_trend_maps, series_stats,
     # geometry
-    load_country_shape,
+    load_country_shape, build_mask,
     # precipitation index functions (defined in utils)
     annual_sdii, annual_spi_jja,
     annual_rx1day, annual_rx5day, annual_r10mm, annual_r20mm, annual_cwd,
@@ -585,6 +585,16 @@ def process_index(
     thr_model_mean = float(np.nanmean(thr_model.values)) if thr_model is not None else np.nan
     thr_bias = (thr_model_mean - thr_obs_mean) if np.isfinite(thr_obs_mean) else np.nan
 
+    # Germany-only mask — all statistics below are restricted to this domain
+    _de = build_mask(trend_obs["lon"].values, trend_obs["lat"].values, geom)
+    _n_de = int(_de.sum())
+
+    def _de_mean(arr):
+        return float(np.nanmean(arr[_de])) if _n_de > 0 else np.nan
+
+    def _de_sig(pval_arr):
+        return float((pval_arr[_de] < 0.05).sum() / _n_de) if _n_de > 0 else np.nan
+
     summary_rows.append({
         "index":      name,
         "unit":       unit,
@@ -595,17 +605,15 @@ def process_index(
         "ICON_threshold_mean":            _fmt(thr_model_mean),
         "threshold_bias_ICON_minus_EOBS": _fmt(thr_bias),
 
-        # Gridcell-average Theil-Sen slope
-        "EOBS_mean_gridcell_trend":       _fmt(np.nanmean(trend_obs["sen_slope"].values)),
-        "ICON_mean_gridcell_trend":       _fmt(np.nanmean(trend_model["sen_slope"].values)),
-        "trend_bias_ICON_minus_EOBS":     _fmt(np.nanmean(
+        # Gridcell-average Theil-Sen slope — Germany cells only
+        "EOBS_mean_gridcell_trend":       _fmt(_de_mean(trend_obs["sen_slope"].values)),
+        "ICON_mean_gridcell_trend":       _fmt(_de_mean(trend_model["sen_slope"].values)),
+        "trend_bias_ICON_minus_EOBS":     _fmt(_de_mean(
             trend_model["sen_slope"].values - trend_obs["sen_slope"].values)),
 
-        # Fraction of grid cells with statistically significant trend (p < 0.05)
-        "EOBS_sig_grid_fraction":  _fmt(np.nanmean(
-            (trend_obs["mk_pvalue"].values   < 0.05).astype(float))),
-        "ICON_sig_grid_fraction":  _fmt(np.nanmean(
-            (trend_model["mk_pvalue"].values < 0.05).astype(float))),
+        # Fraction of Germany grid cells with significant trend (p < 0.05)
+        "EOBS_sig_grid_fraction":  _fmt(_de_sig(trend_obs["mk_pvalue"].values)),
+        "ICON_sig_grid_fraction":  _fmt(_de_sig(trend_model["mk_pvalue"].values)),
 
         # Germany-average series — Theil-Sen + Mann-Kendall (Yue-Wang)
         "EOBS_series_sen_slope_decade": _fmt(obs_stats["sen_slope_decade"]),
