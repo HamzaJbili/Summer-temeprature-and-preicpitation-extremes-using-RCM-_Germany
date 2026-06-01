@@ -96,6 +96,7 @@ from utils import (
     load_country_shape,
     # precipitation index functions (defined in utils)
     annual_sdii, annual_spi_jja,
+    annual_rx1day, annual_rx5day, annual_r10mm, annual_r20mm, annual_cwd,
     # visualisation
     set_ipcc_style, plot_obs_bias_maps, plot_germany_series,
     taylor_diagram, plot_trend_heatmap,
@@ -215,6 +216,34 @@ HWN_BIAS_LEVELS  = [-0.6, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.6]
 HWD_BIAS_LEVELS  = [-2.0, -1.5, -1.0, -0.5, -0.25, 0, 0.25, 0.5, 1.0, 1.5, 2.0]
 SDII_BIAS_LEVELS = [-2.0, -1.5, -1.0, -0.5, -0.25, 0, 0.25, 0.5, 1.0, 1.5, 2.0]
 CDD_BIAS_LEVELS  = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]             # days/summer
+
+# ── Annex precipitation indices — palettes, climatology levels, bias levels ────
+# Sequential blue palette for precipitation intensity / frequency / persistence.
+PREC_INT_COLORS = [
+    "#f0f9ff", "#d0e7f5", "#a8d1e8", "#7db8d8", "#4f99c4",
+    "#2b7ab3", "#1560a0", "#0b4d89", "#073b71", "#042a58",
+]
+
+# Climatology (mean 1950-2022) levels
+RX1DAY_CLIM_LEVELS = [15, 20, 25, 28, 30, 33, 36, 40, 45, 50, 60]   # mm/day
+RX5DAY_CLIM_LEVELS = [25, 35, 40, 45, 50, 55, 60, 65, 70, 80, 95]   # mm
+R10MM_CLIM_LEVELS  = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13]           # days/summer
+R20MM_CLIM_LEVELS  = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 6.0]
+CWD_CLIM_LEVELS    = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]           # days/summer
+
+# Bias (ICON − E-OBS) levels for climatology maps
+RX1DAY_BIAS_LEVELS = [-10, -7, -5, -3, -1, 0, 1, 3, 5, 7, 10]       # mm
+RX5DAY_BIAS_LEVELS = [-15, -10, -7, -5, -2, 0, 2, 5, 7, 10, 15]     # mm
+R10MM_BIAS_LEVELS  = [-3, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 3]
+R20MM_BIAS_LEVELS  = [-1.0, -0.75, -0.5, -0.3, -0.1, 0, 0.1, 0.3, 0.5, 0.75, 1.0]
+CWD_BIAS_LEVELS    = [-3, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 3]
+
+# Trend levels (Theil-Sen slope per decade)
+RX1DAY_LEVELS = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]              # mm/decade
+RX5DAY_LEVELS = [-8, -6, -4, -2, -1, 0, 1, 2, 4, 6, 8]              # mm/decade
+R10MM_LEVELS  = [-1.5, -1.0, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1.0, 1.5]
+R20MM_LEVELS  = [-0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5]
+CWD_LEVELS_AX = [-1.0, -0.75, -0.5, -0.25, -0.1, 0, 0.1, 0.25, 0.5, 0.75, 1.0]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -900,6 +929,132 @@ if __name__ == "__main__":
         suptitle="SPI — Theil-Sen Trend 1950–2022",
     )
     # SPI mean ≈ 0 by construction — no climatology map
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  ANNEX — supplementary precipitation indices
+    #  Rx1day, Rx5day (peak intensity) + R10mm, R20mm, CWD (frequency/persistence)
+    #  Not part of the core six, but retained for the appendix chapter.
+    # ══════════════════════════════════════════════════════════════════════════
+    print("\n=== Annex — Supplementary Precipitation Indices ===")
+
+    # ── Compute ───────────────────────────────────────────────────────────────
+    print("Annex: Rx1day …")
+    rx1day_model = annual_rx1day(pr_model)
+    rx1day_obs   = annual_rx1day(pr_obs)
+    save_index(rx1day_model, "Rx1day", "ICON")
+    save_index(rx1day_obs,   "Rx1day", "EOBS")
+
+    print("Annex: Rx5day …")
+    rx5day_model = annual_rx5day(pr_model)
+    rx5day_obs   = annual_rx5day(pr_obs)
+    save_index(rx5day_model, "Rx5day", "ICON")
+    save_index(rx5day_obs,   "Rx5day", "EOBS")
+
+    print("Annex: R10mm …")
+    r10mm_model = annual_r10mm(pr_model)
+    r10mm_obs   = annual_r10mm(pr_obs)
+    save_index(r10mm_model, "R10mm", "ICON")
+    save_index(r10mm_obs,   "R10mm", "EOBS")
+
+    print("Annex: R20mm …")
+    r20mm_model = annual_r20mm(pr_model)
+    r20mm_obs   = annual_r20mm(pr_obs)
+    save_index(r20mm_model, "R20mm", "ICON")
+    save_index(r20mm_obs,   "R20mm", "EOBS")
+
+    print("Annex: CWD (may take a few minutes) …")
+    cwd_model = annual_cwd(pr_model)
+    cwd_obs   = annual_cwd(pr_obs)
+    save_index(cwd_model, "CWD", "ICON")
+    save_index(cwd_obs,   "CWD", "EOBS")
+
+    # ── Group A: peak intensity (Rx1day + Rx5day) — clim + trend ─────────────
+    print("Annex: Group A (Rx1day + Rx5day) — climatology map …")
+    plot_grouped_clim_maps(
+        indices=[
+            dict(obs_clim=rx1day_obs.mean("year", skipna=True),
+                 mod_clim=rx1day_model.mean("year", skipna=True),
+                 clim_levels=RX1DAY_CLIM_LEVELS, clim_colors=PREC_INT_COLORS,
+                 clim_diff_levels=RX1DAY_BIAS_LEVELS,
+                 clim_label="mm", tick_fmt="%.0f", diff_tick_fmt="%.0f",
+                 row_label="Rx1day — Max 1-day precipitation"),
+            dict(obs_clim=rx5day_obs.mean("year", skipna=True),
+                 mod_clim=rx5day_model.mean("year", skipna=True),
+                 clim_levels=RX5DAY_CLIM_LEVELS, clim_colors=PREC_INT_COLORS,
+                 clim_diff_levels=RX5DAY_BIAS_LEVELS,
+                 clim_label="mm", tick_fmt="%.0f", diff_tick_fmt="%.0f",
+                 row_label="Rx5day — Max 5-day precipitation"),
+        ],
+        gdf=gdf, geom=geom,
+        outfile=os.path.join(FIGDIR, "annex_A_clim_map.png"),
+        suptitle="Peak Intensity Climatology 1950–2022 — Rx1day and Rx5day",
+    )
+
+    print("Annex: Group A (Rx1day + Rx5day) — trend map …")
+    plot_grouped_trend_maps(
+        indices=[
+            dict(annual_obs=rx1day_obs, annual_model=rx1day_model,
+                 obs_levels=RX1DAY_LEVELS, obs_colors=PREC_COLORS,
+                 trend_unit="mm/decade", tick_fmt="%.1f",
+                 row_label="Rx1day — Max 1-day"),
+            dict(annual_obs=rx5day_obs, annual_model=rx5day_model,
+                 obs_levels=RX5DAY_LEVELS, obs_colors=PREC_COLORS,
+                 trend_unit="mm/decade", tick_fmt="%.1f",
+                 row_label="Rx5day — Max 5-day"),
+        ],
+        gdf=gdf, geom=geom,
+        outfile=os.path.join(FIGDIR, "annex_A_trend_map.png"),
+        suptitle="Peak Intensity Trends 1950–2022 — Rx1day and Rx5day",
+    )
+
+    # ── Group B: frequency + persistence (R10mm + R20mm + CWD) ───────────────
+    print("Annex: Group B (R10mm + R20mm + CWD) — climatology map …")
+    plot_grouped_clim_maps(
+        indices=[
+            dict(obs_clim=r10mm_obs.mean("year", skipna=True),
+                 mod_clim=r10mm_model.mean("year", skipna=True),
+                 clim_levels=R10MM_CLIM_LEVELS, clim_colors=PREC_INT_COLORS,
+                 clim_diff_levels=R10MM_BIAS_LEVELS,
+                 clim_label="days/summer", tick_fmt="%.0f", diff_tick_fmt="%.1f",
+                 row_label="R10mm — Heavy rain days (≥10 mm)"),
+            dict(obs_clim=r20mm_obs.mean("year", skipna=True),
+                 mod_clim=r20mm_model.mean("year", skipna=True),
+                 clim_levels=R20MM_CLIM_LEVELS, clim_colors=PREC_INT_COLORS,
+                 clim_diff_levels=R20MM_BIAS_LEVELS,
+                 clim_label="days/summer", tick_fmt="%.1f", diff_tick_fmt="%.2f",
+                 row_label="R20mm — Very heavy rain days (≥20 mm)"),
+            dict(obs_clim=cwd_obs.mean("year", skipna=True),
+                 mod_clim=cwd_model.mean("year", skipna=True),
+                 clim_levels=CWD_CLIM_LEVELS, clim_colors=PREC_INT_COLORS,
+                 clim_diff_levels=CWD_BIAS_LEVELS,
+                 clim_label="days/summer", tick_fmt="%.0f", diff_tick_fmt="%.1f",
+                 row_label="CWD — Max consecutive wet days"),
+        ],
+        gdf=gdf, geom=geom,
+        outfile=os.path.join(FIGDIR, "annex_B_clim_map.png"),
+        suptitle="Frequency & Persistence Climatology 1950–2022 — R10mm, R20mm, CWD",
+    )
+
+    print("Annex: Group B (R10mm + R20mm + CWD) — trend map …")
+    plot_grouped_trend_maps(
+        indices=[
+            dict(annual_obs=r10mm_obs, annual_model=r10mm_model,
+                 obs_levels=R10MM_LEVELS, obs_colors=PREC_COLORS,
+                 trend_unit="days/decade", tick_fmt="%.2f",
+                 row_label="R10mm — Heavy rain days"),
+            dict(annual_obs=r20mm_obs, annual_model=r20mm_model,
+                 obs_levels=R20MM_LEVELS, obs_colors=PREC_COLORS,
+                 trend_unit="days/decade", tick_fmt="%.2f",
+                 row_label="R20mm — Very heavy rain days"),
+            dict(annual_obs=cwd_obs, annual_model=cwd_model,
+                 obs_levels=CWD_LEVELS_AX, obs_colors=PREC_COLORS,
+                 trend_unit="days/decade", tick_fmt="%.2f",
+                 row_label="CWD — Max consecutive wet days"),
+        ],
+        gdf=gdf, geom=geom,
+        outfile=os.path.join(FIGDIR, "annex_B_trend_map.png"),
+        suptitle="Frequency & Persistence Trends 1950–2022 — R10mm, R20mm, CWD",
+    )
 
     # ══════════════════════════════════════════════════════════════════════════
     #  SUMMARY FIGURES
