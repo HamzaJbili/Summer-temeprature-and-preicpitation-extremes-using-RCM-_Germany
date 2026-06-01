@@ -1007,7 +1007,7 @@ def plot_three_panel_trend_maps(
              fmt=tick_fmt, lbl=trend_unit),
         dict(ax=fig.add_subplot(gs[0, 4], projection=PROJ),
              da=diff, cmap=cmap_diff, norm=norm_diff,
-             lvls=diff_lvls, tag="(c)", title="Diff",
+             lvls=diff_lvls, tag="(c)", title="Diff (ICON−E-OBS)",
              pval=None, stipple=False,
              fmt=tick_fmt, lbl=trend_unit),
     ]

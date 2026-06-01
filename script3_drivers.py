@@ -493,11 +493,12 @@ if __name__ == "__main__":
         # Composite anomaly for each driver
         composites = {}
         for dname, anom in driver_annual_anoms.items():
-            common = np.intersect1d(high_years, anom["year"].values)
-            if len(common) < 3:
-                print(f"  {dname}: fewer than 3 overlapping years — skipping.")
+            anom_years   = anom["year"].values.astype(int)
+            common_high  = np.intersect1d(high_years, anom_years).astype(int)
+            if len(common_high) < 3:
+                print(f"  {dname}: fewer than 3 overlapping high-index years — skipping.")
                 continue
-            comp = composite_high_vs_rest(anom, high_years, all_years)
+            comp = composite_high_vs_rest(anom, common_high, anom_years)
             composites[dname] = comp
 
             # Individual map
