@@ -98,7 +98,7 @@ from utils import (
     annual_sdii, annual_spi_jja,
     annual_rx1day, annual_rx5day, annual_r10mm, annual_r20mm, annual_cwd,
     # visualisation
-    set_ipcc_style, plot_obs_bias_maps, plot_germany_series,
+    set_ipcc_style, plot_germany_series,
     taylor_diagram, plot_trend_heatmap,
     plot_climatology_maps,
     plot_grouped_trend_maps, plot_grouped_clim_maps, plot_three_panel_trend_maps,
@@ -183,11 +183,15 @@ HWD_CLIM_COLORS = [
 ]
 HWD_CLIM_LEVELS = [3, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.5]
 
-# SDII mean — mm per wet day
-SDII_CLIM_COLORS = [
-    "#f0f9ff", "#d0e7f5", "#a8d1e8", "#7db8d8", "#4f99c4",
-    "#2b7ab3", "#1560a0", "#0b4d89", "#073b71", "#042a58",
+# Sequential precipitation palette (YlGnBu-style): white→light-green→dark-blue.
+# Represents increasing precipitation amount / intensity across all precip clim maps.
+PREC_SEQ_COLORS = [
+    "#ffffd9", "#edf8b1", "#c7e9b4", "#7fcdbb", "#41b6c4",
+    "#1d91c0", "#225ea8", "#253494", "#081d58", "#030f33",
 ]
+
+# SDII mean — mm per wet day
+SDII_CLIM_COLORS = PREC_SEQ_COLORS
 SDII_CLIM_LEVELS = [3, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 9]  # mm/wet-day (unchanged)
 
 # CDD mean — max consecutive dry days per summer
@@ -217,12 +221,7 @@ HWD_BIAS_LEVELS  = [-2.0, -1.5, -1.0, -0.5, -0.25, 0, 0.25, 0.5, 1.0, 1.5, 2.0]
 SDII_BIAS_LEVELS = [-2.0, -1.5, -1.0, -0.5, -0.25, 0, 0.25, 0.5, 1.0, 1.5, 2.0]
 CDD_BIAS_LEVELS  = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]             # days/summer
 
-# ── Annex precipitation indices — palettes, climatology levels, bias levels ────
-# Sequential blue palette for precipitation intensity / frequency / persistence.
-PREC_INT_COLORS = [
-    "#f0f9ff", "#d0e7f5", "#a8d1e8", "#7db8d8", "#4f99c4",
-    "#2b7ab3", "#1560a0", "#0b4d89", "#073b71", "#042a58",
-]
+# ── Annex precipitation indices — climatology levels and bias levels ──────────
 
 # Climatology (mean 1950-2022) levels
 RX1DAY_CLIM_LEVELS = [15, 20, 25, 28, 30, 33, 36, 40, 45, 50, 60]   # mm/day
@@ -539,21 +538,14 @@ def process_index(
     else:
         _r_pat, _p_pat = np.nan, np.nan
 
-    # ── 1. Trend map: E-OBS | Diff (ICON − E-OBS) ────────────────────────────
-    # diff_colors uses the universal blue-white-red palette so the Diff panel
-    # is visually distinct from the index-specific E-OBS palette, regardless
-    # of whether both panels end up on the same numeric scale.
-    plot_obs_bias_maps(
-        obs_slope   = trend_obs["sen_slope"],
-        model_slope = trend_model["sen_slope"],
-        obs_pval    = trend_obs["mk_pvalue"],
-        model_pval  = trend_model["mk_pvalue"],
+    # ── 1. Trend map: E-OBS | ICON-CLM | Diff ────────────────────────────────
+    plot_three_panel_trend_maps(
+        annual_obs=annual_obs, annual_model=annual_model,
         gdf=gdf, geom=geom,
-        outfile     = os.path.join(FIGDIR, f"{name}_trend_map.png"),
-        obs_levels  = trend_levels, obs_colors=colors,
-        diff_colors = DIFF_COLORS,
-        cbar_label  = trend_unit, tick_fmt=tick_fmt,
-        suptitle    = f"{long_name} — Theil-Sen Trend 1950–2022",
+        outfile=os.path.join(FIGDIR, f"{name}_trend_map.png"),
+        obs_levels=trend_levels, obs_colors=colors,
+        trend_unit=trend_unit, tick_fmt=tick_fmt,
+        suptitle=f"{long_name} — Theil-Sen Trend 1950–2022",
         obs_sequential=obs_sequential,
     )
 
@@ -850,14 +842,6 @@ if __name__ == "__main__":
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
         heatmap_rows=heatmap_rows,
     )
-    plot_three_panel_trend_maps(
-        annual_obs=sdii_obs, annual_model=sdii_model,
-        gdf=gdf, geom=geom,
-        outfile=os.path.join(FIGDIR, "SDII_trend_map_3panel.png"),
-        obs_levels=SDII_LEVELS, obs_colors=PREC_COLORS,
-        trend_unit="mm/wet-day/decade", tick_fmt="%.2f",
-        suptitle="SDII — Theil-Sen Trend 1950–2022",
-    )
     plot_climatology_maps(
         obs_clim = sdii_obs.mean("year",   skipna=True),
         mod_clim = sdii_model.mean("year", skipna=True),
@@ -890,7 +874,7 @@ if __name__ == "__main__":
         annual_model=cdd_model, annual_obs=cdd_obs,
         thr_model=None,          thr_obs=None,
         unit="days/summer",      trend_unit="days/decade",
-        trend_levels=CDD_LEVELS, colors=CDD_COLORS, tick_fmt="%.2f",
+        trend_levels=CDD_LEVELS, colors=PREC_COLORS, tick_fmt="%.2f",
         gdf=gdf, geom=geom,
         summary_rows=summary_rows,
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
@@ -927,14 +911,6 @@ if __name__ == "__main__":
         summary_rows=summary_rows,
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
         heatmap_rows=heatmap_rows,
-    )
-    plot_three_panel_trend_maps(
-        annual_obs=spi_obs, annual_model=spi_model,
-        gdf=gdf, geom=geom,
-        outfile=os.path.join(FIGDIR, "SPI_trend_map_3panel.png"),
-        obs_levels=SPI_LEVELS, obs_colors=PREC_COLORS,
-        trend_unit="SPI/decade", tick_fmt="%.2f",
-        suptitle="SPI — Theil-Sen Trend 1950–2022",
     )
     # SPI mean ≈ 0 by construction — no climatology map
 
@@ -982,13 +958,13 @@ if __name__ == "__main__":
         indices=[
             dict(obs_clim=rx1day_obs.mean("year", skipna=True),
                  mod_clim=rx1day_model.mean("year", skipna=True),
-                 clim_levels=RX1DAY_CLIM_LEVELS, clim_colors=PREC_INT_COLORS,
+                 clim_levels=RX1DAY_CLIM_LEVELS, clim_colors=PREC_SEQ_COLORS,
                  clim_diff_levels=RX1DAY_BIAS_LEVELS,
                  clim_label="mm", tick_fmt="%.0f", diff_tick_fmt="%.0f",
                  row_label="Rx1day — Max 1-day precipitation"),
             dict(obs_clim=rx5day_obs.mean("year", skipna=True),
                  mod_clim=rx5day_model.mean("year", skipna=True),
-                 clim_levels=RX5DAY_CLIM_LEVELS, clim_colors=PREC_INT_COLORS,
+                 clim_levels=RX5DAY_CLIM_LEVELS, clim_colors=PREC_SEQ_COLORS,
                  clim_diff_levels=RX5DAY_BIAS_LEVELS,
                  clim_label="mm", tick_fmt="%.0f", diff_tick_fmt="%.0f",
                  row_label="Rx5day — Max 5-day precipitation"),
@@ -1021,19 +997,19 @@ if __name__ == "__main__":
         indices=[
             dict(obs_clim=r10mm_obs.mean("year", skipna=True),
                  mod_clim=r10mm_model.mean("year", skipna=True),
-                 clim_levels=R10MM_CLIM_LEVELS, clim_colors=PREC_INT_COLORS,
+                 clim_levels=R10MM_CLIM_LEVELS, clim_colors=PREC_SEQ_COLORS,
                  clim_diff_levels=R10MM_BIAS_LEVELS,
                  clim_label="days/summer", tick_fmt="%.0f", diff_tick_fmt="%.1f",
                  row_label="R10mm — Heavy rain days (≥10 mm)"),
             dict(obs_clim=r20mm_obs.mean("year", skipna=True),
                  mod_clim=r20mm_model.mean("year", skipna=True),
-                 clim_levels=R20MM_CLIM_LEVELS, clim_colors=PREC_INT_COLORS,
+                 clim_levels=R20MM_CLIM_LEVELS, clim_colors=PREC_SEQ_COLORS,
                  clim_diff_levels=R20MM_BIAS_LEVELS,
                  clim_label="days/summer", tick_fmt="%.1f", diff_tick_fmt="%.2f",
                  row_label="R20mm — Very heavy rain days (≥20 mm)"),
             dict(obs_clim=cwd_obs.mean("year", skipna=True),
                  mod_clim=cwd_model.mean("year", skipna=True),
-                 clim_levels=CWD_CLIM_LEVELS, clim_colors=PREC_INT_COLORS,
+                 clim_levels=CWD_CLIM_LEVELS, clim_colors=PREC_SEQ_COLORS,
                  clim_diff_levels=CWD_BIAS_LEVELS,
                  clim_label="days/summer", tick_fmt="%.0f", diff_tick_fmt="%.1f",
                  row_label="CWD — Max consecutive wet days"),

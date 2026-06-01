@@ -714,7 +714,7 @@ def plot_grouped_trend_maps(
             dict(ax=fig.add_subplot(gs[row, 4], projection=PROJ),
                  da=diff, cmap=cmap_diff, norm=norm_diff,
                  lvls=diff_lvls, tag=t2,
-                 title=f"Diff · {idx['row_label']}", pval=None,
+                 title=f"Diff (ICON−E-OBS) · {idx['row_label']}", pval=None,
                  stipple=False, fmt=idx["tick_fmt"], lbl=idx["trend_unit"]),
         ]
 
@@ -866,7 +866,7 @@ def plot_grouped_clim_maps(
             dict(ax=fig.add_subplot(gs[row, 4], projection=PROJ),
                  da=diff, cmap=cmap_diff, norm=norm_diff,
                  lvls=idx["clim_diff_levels"], tag=t2,
-                 title=f"Diff · {idx['row_label']}",
+                 title=f"Diff (ICON−E-OBS) · {idx['row_label']}",
                  fmt=diff_fmt, lbl=clim_lbl),
         ]
 
