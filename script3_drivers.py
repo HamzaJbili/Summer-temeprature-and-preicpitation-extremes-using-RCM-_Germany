@@ -84,9 +84,10 @@ INDICES = [
 ]
 
 # ── driver file configuration ─────────────────────────────────────────────────
-# All files follow the CORDEX EUR-12 ICON-CLM naming convention.
+# Files regridded to DE-0.25 (0.25° Germany domain) from the original EUR-12.
+# Naming convention: {var}_DE-0.25_ERA5_evaluation_..._day_19500101-20241231.nc
 _SUFFIX = (
-    "EUR-12_ERA5_evaluation_r1i1p1f1_"
+    "DE-0.25_ERA5_evaluation_r1i1p1f1_"
     "CLMcom-Hereon_ICON-CLM-202407-1-1_v1-r2_day_"
     "19500101-20241231.nc"
 )
