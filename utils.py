@@ -474,44 +474,31 @@ def plot_climatology_maps(obs_clim, mod_clim, gdf, geom, outfile,
                           bias_levels=None, bias_colors=None,
                           bias_label=None, bias_tick_fmt="%.1f"):
     """
-    Two-panel figure: (a) E-OBS mean field, (b) Bias = ICON − E-OBS.
+    Three-panel climatology figure: (a) E-OBS | (b) ICON-CLM | (c) Diff.
 
-    The three-panel layout (E-OBS | ICON | Bias) was replaced with this two-panel
-    design because:
-      - E-OBS and Bias together carry the scientifically relevant comparison;
-        the ICON absolute-field panel adds no information beyond what the bias
-        already shows;
-      - The bias colorbar now uses explicit, user-specified levels (*bias_levels*)
-        rather than auto-scaling to the domain-wide maximum, which was dominated
-        by coastal edge-cells and hid the bias structure over the interior.
+    E-OBS and ICON share the same explicit colorbar levels.
+    The Diff panel uses explicit bias_levels (required — no auto-scaling).
 
     Parameters
     ----------
     obs_clim, mod_clim : xr.DataArray (lat, lon)
-        Mean field for E-OBS and ICON-CLM (e.g. 1950-2022 climatology).
-    gdf, geom : Germany GeoDataFrame and Shapely geometry.
+    gdf, geom : Germany geometry
     outfile   : str
-    levels    : list — sequential boundary levels for the E-OBS panel.
-    colors    : list — len = len(levels)-1, one colour per interval.
-    cbar_label : str — unit label for the E-OBS colorbar (e.g. "CDD mean [days]").
-    tick_fmt  : str — tick format for the E-OBS colorbar (default "%.0f").
+    levels    : list — shared sequential levels for E-OBS and ICON panels.
+    colors    : list — colours for sequential panels.
+    cbar_label : str — unit label (e.g. "days/summer").
+    tick_fmt  : str
     suptitle  : str, optional
-    bias_levels : list — explicit symmetric diverging levels for the bias panel.
-        MUST be provided; passing None raises ValueError.  Supplying explicit
-        levels (not auto-scaled from data) is required for scientific rigour so
-        that coastal outlier cells do not distort the interior colour mapping.
-    bias_colors : list — len = len(bias_levels)-1.  Defaults to a standard
-        blue-white-red diverging palette if not given.
-    bias_label  : str — bias colorbar label.  Defaults to
-        "Bias (ICON − E-OBS) [<unit>]" derived from cbar_label.
-    bias_tick_fmt : str — tick format for the bias colorbar (default "%.1f").
+    bias_levels : list — explicit diverging levels for the Diff panel (required).
+    bias_colors : list — colours for Diff panel (default blue-white-red).
+    bias_label  : str — Diff colorbar label (auto-derived if None).
+    bias_tick_fmt : str
     """
     if bias_levels is None:
         raise ValueError(
             "plot_climatology_maps: bias_levels must be supplied explicitly. "
             "Auto-scaling the bias colorbar to the domain maximum distorts the "
-            "colour mapping when coastal cells are outliers. Choose levels that "
-            "represent the range of the interior field."
+            "colour mapping when coastal cells are outliers."
         )
 
     _DEFAULT_BIAS_COLORS = [
@@ -519,48 +506,46 @@ def plot_climatology_maps(obs_clim, mod_clim, gdf, geom, outfile,
         "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f",
     ]
     if bias_colors is None:
-        n_intervals = len(bias_levels) - 1
-        bias_colors = _interp_colors(_DEFAULT_BIAS_COLORS, n_intervals)
+        bias_colors = _interp_colors(_DEFAULT_BIAS_COLORS, len(bias_levels) - 1)
 
     if bias_label is None:
-        if "[" in cbar_label:
-            unit_str = cbar_label.split("[")[-1].rstrip("]")
-            bias_label = f"Diff (ICON − E-OBS) [{unit_str}]"
-        else:
-            bias_label = f"Diff (ICON − E-OBS) [{cbar_label}]"
+        bias_label = f"Diff (ICON − E-OBS) [{cbar_label}]"
 
     bias = (mod_clim - obs_clim).astype(np.float32)
 
     PC   = ccrs.PlateCarree()
     PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
 
-    cmap_obs  = mcolors.ListedColormap(colors)
-    cmap_obs.set_under(colors[0])
-    cmap_obs.set_over(colors[-1])
-    norm_obs  = mcolors.BoundaryNorm(levels, cmap_obs.N)
+    obs_cols = _interp_colors(colors, len(levels) - 1)
+    cmap_obs = mcolors.ListedColormap(obs_cols)
+    cmap_obs.set_under(obs_cols[0]); cmap_obs.set_over(obs_cols[-1])
+    norm_obs = mcolors.BoundaryNorm(levels, cmap_obs.N)
 
-    cmap_bias = mcolors.ListedColormap(bias_colors)
-    cmap_bias.set_under(bias_colors[0])
-    cmap_bias.set_over(bias_colors[-1])
+    bias_cols = _interp_colors(bias_colors, len(bias_levels) - 1)
+    cmap_bias = mcolors.ListedColormap(bias_cols)
+    cmap_bias.set_under(bias_cols[0]); cmap_bias.set_over(bias_cols[-1])
     norm_bias = mcolors.BoundaryNorm(bias_levels, cmap_bias.N)
 
     from matplotlib.gridspec import GridSpec
-    fig = plt.figure(figsize=(10.5, 4.8))
+    fig = plt.figure(figsize=(15.5, 4.8))
     fig.patch.set_facecolor("white")
     if suptitle:
         fig.suptitle(suptitle, fontsize=11, fontweight="normal", y=0.99)
 
-    gs  = GridSpec(1, 3, width_ratios=[1, 0.08, 1],
-                   left=0.03, right=0.90, top=0.91, bottom=0.06,
-                   wspace=0.0)
-    axs = [fig.add_subplot(gs[0, 0], projection=PROJ),
-           fig.add_subplot(gs[0, 2], projection=PROJ)]
+    gs = GridSpec(1, 5, width_ratios=[1, 0.08, 1, 0.08, 1],
+                  left=0.02, right=0.93, top=0.91, bottom=0.06,
+                  wspace=0.0)
 
     panels = [
-        dict(ax=axs[0], da=obs_clim, cmap=cmap_obs,  norm=norm_obs,
-             lvls=levels,      lbl=cbar_label, fmt=tick_fmt,  tag="(a)", title="E-OBS"),
-        dict(ax=axs[1], da=bias,     cmap=cmap_bias, norm=norm_bias,
-             lvls=bias_levels, lbl=bias_label, fmt=bias_tick_fmt, tag="(b)",
+        dict(ax=fig.add_subplot(gs[0, 0], projection=PROJ),
+             da=obs_clim, cmap=cmap_obs,  norm=norm_obs,
+             lvls=levels,      lbl=cbar_label,  fmt=tick_fmt,      tag="(a)", title="E-OBS"),
+        dict(ax=fig.add_subplot(gs[0, 2], projection=PROJ),
+             da=mod_clim, cmap=cmap_obs,  norm=norm_obs,
+             lvls=levels,      lbl=cbar_label,  fmt=tick_fmt,      tag="(b)", title="ICON-CLM"),
+        dict(ax=fig.add_subplot(gs[0, 4], projection=PROJ),
+             da=bias,     cmap=cmap_bias, norm=norm_bias,
+             lvls=bias_levels, lbl=bias_label,  fmt=bias_tick_fmt, tag="(c)",
              title="Diff (ICON − E-OBS)"),
     ]
 
@@ -619,17 +604,21 @@ def plot_grouped_trend_maps(
     suptitle=None,
 ):
     """
-    Multi-row trend map figure: each index gets one row of two panels
-    (E-OBS trend | Diff ICON−E-OBS), stacked vertically.
+    Multi-row trend map figure: each index gets one row of three panels
+    (E-OBS | ICON-CLM | Diff ICON−E-OBS), stacked vertically.
+
+    E-OBS and ICON-CLM share a pooled colorbar scale so the visual comparison
+    is direct (same colour = same value).  Stippling on both data panels.
 
     Parameters
     ----------
     indices : list of dict, each with keys:
         annual_obs, annual_model : xr.DataArray (year, lat, lon)
-        obs_levels, obs_colors   : colormap for E-OBS panel
+        obs_levels, obs_colors   : colormap for E-OBS and ICON panels (shared)
         trend_unit               : str
         tick_fmt                 : str
         row_label                : str (short, used as row title)
+        obs_sequential           : bool, optional (default False)
     gdf, geom : Germany geometry
     outfile   : str
     suptitle  : str, optional
@@ -640,16 +629,18 @@ def plot_grouped_trend_maps(
     PC   = ccrs.PlateCarree()
     PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
 
-    fig = plt.figure(figsize=(11.0, 4.8 * n))
+    fig = plt.figure(figsize=(15.5, 4.8 * n))
     fig.patch.set_facecolor("white")
     if suptitle:
         fig.suptitle(suptitle, fontsize=11, fontweight="normal", y=1.00)
 
-    gs = GridSpec(n, 3, width_ratios=[1, 0.08, 1],
-                  left=0.03, right=0.90,
+    gs = GridSpec(n, 5, width_ratios=[1, 0.08, 1, 0.08, 1],
+                  left=0.02, right=0.92,
                   top=0.94 if suptitle else 0.97,
                   bottom=0.03,
                   hspace=0.14, wspace=0.0)
+
+    _all_tags = list("abcdefghijklmnopqrstuvwxyz")
 
     for row, idx in enumerate(indices):
         trend_obs   = compute_trend_maps(idx["annual_obs"])
@@ -696,21 +687,33 @@ def plot_grouped_trend_maps(
             norm = mcolors.BoundaryNorm(nice, cmap.N)
             return nice, colors, cmap, norm
 
+        # Shared pooled scale for E-OBS + ICON so the visual comparison is direct
+        _combined_t = np.concatenate([
+            trend_obs["sen_slope"].values.ravel(),
+            trend_model["sen_slope"].values.ravel(),
+        ])
         obs_lvls, _, cmap_obs, norm_obs = _scale(
-            trend_obs["sen_slope"].values, obs_colors_orig, obs_levels_base,
+            _combined_t, obs_colors_orig, obs_levels_base,
             sequential=idx.get("obs_sequential", False))
         diff_lvls, _, cmap_diff, norm_diff = _scale(
             diff.values, diff_colors_orig, obs_levels_base)
 
+        t0, t1, t2 = (f"({_all_tags[row*3+k]})" for k in range(3))
+
         panels = [
             dict(ax=fig.add_subplot(gs[row, 0], projection=PROJ),
                  da=trend_obs["sen_slope"], cmap=cmap_obs, norm=norm_obs,
-                 lvls=obs_lvls, tag="(a)" if row==0 else f"({'abcdefgh'[row*2]})",
+                 lvls=obs_lvls, tag=t0,
                  title=f"E-OBS · {idx['row_label']}", pval=trend_obs["mk_pvalue"],
                  stipple=True, fmt=idx["tick_fmt"], lbl=idx["trend_unit"]),
             dict(ax=fig.add_subplot(gs[row, 2], projection=PROJ),
+                 da=trend_model["sen_slope"], cmap=cmap_obs, norm=norm_obs,
+                 lvls=obs_lvls, tag=t1,
+                 title=f"ICON-CLM · {idx['row_label']}", pval=trend_model["mk_pvalue"],
+                 stipple=True, fmt=idx["tick_fmt"], lbl=idx["trend_unit"]),
+            dict(ax=fig.add_subplot(gs[row, 4], projection=PROJ),
                  da=diff, cmap=cmap_diff, norm=norm_diff,
-                 lvls=diff_lvls, tag=f"({'abcdefgh'[row*2+1]})",
+                 lvls=diff_lvls, tag=t2,
                  title=f"Diff · {idx['row_label']}", pval=None,
                  stipple=False, fmt=idx["tick_fmt"], lbl=idx["trend_unit"]),
         ]
@@ -738,6 +741,150 @@ def plot_grouped_trend_maps(
                 lons2, lats2 = np.meshgrid(fine_p["lon"].values, fine_p["lat"].values)
                 ax.scatter(lons2[sig_arr], lats2[sig_arr], s=0.4, c="k",
                            alpha=0.25, transform=PC, zorder=5)
+                de_c  = build_mask(p["pval"]["lon"].values, p["pval"]["lat"].values, geom)
+                n_de  = int(de_c.sum())
+                if n_de > 0:
+                    sig_fr = int((de_c & (p["pval"].values < 0.05)).sum()) / n_de * 100
+                    ax.text(0.97, 0.03, f"Sig.: {sig_fr:.0f}%",
+                            transform=ax.transAxes, ha="right", va="bottom",
+                            fontsize=7.5, color="#222222",
+                            bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                                      ec="#aaaaaa", alpha=0.92, lw=0.5))
+
+            ax.add_geometries(gdf.geometry, PC, facecolor="none",
+                              edgecolor="black", linewidth=0.55, zorder=6)
+            ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
+                    ha="left", va="top", fontsize=9, fontweight="bold",
+                    bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
+            ax.set_title(p["title"], fontsize=9, fontweight="bold", pad=4)
+            style_axis(ax)
+
+            # Germany-mean annotation
+            de_mask_c = build_mask(p["da"]["lon"].values, p["da"]["lat"].values, geom)
+            if de_mask_c.any():
+                mean_v = float(np.nanmean(p["da"].values[de_mask_c]))
+                sign   = "+" if mean_v >= 0 else ""
+                ax.text(0.03, 0.03, f"DE: {sign}{p['fmt'] % mean_v}",
+                        transform=ax.transAxes, ha="left", va="bottom",
+                        fontsize=7.5, color="#222222",
+                        bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                                  ec="#aaaaaa", alpha=0.92, lw=0.5))
+
+            cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
+            cb = ColorbarBase(cax, cmap=p["cmap"], norm=p["norm"],
+                              boundaries=p["lvls"], ticks=p["lvls"],
+                              orientation="vertical", extend="neither")
+            cb.ax.tick_params(labelsize=6, pad=2, length=3, width=0.5)
+            cb.ax.yaxis.set_major_formatter(FormatStrFormatter(p["fmt"]))
+            cb.outline.set_linewidth(0.5)
+            cb.set_label(p["lbl"], fontsize=7, labelpad=4)
+
+    fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_grouped_clim_maps(
+    indices, gdf, geom, outfile,
+    suptitle=None,
+):
+    """
+    Multi-row climatology figure: each index gets one row of three panels
+    (E-OBS | ICON-CLM | Diff ICON−E-OBS), stacked vertically.
+
+    E-OBS and ICON-CLM share explicit colorbar levels.
+    The Diff panel uses its own explicit diverging levels.
+
+    Parameters
+    ----------
+    indices : list of dict, each with keys:
+        obs_clim, mod_clim   : xr.DataArray (lat, lon) — mean fields
+        clim_levels          : list — shared explicit levels for E-OBS and ICON
+        clim_colors          : list — colors for the sequential panels
+        clim_diff_levels     : list — explicit diverging levels for Diff
+        clim_label           : str — colorbar label (e.g. "events/summer")
+        tick_fmt             : str — format string for clim colorbar ticks
+        diff_tick_fmt        : str, optional (default "%.2f")
+        row_label            : str — short index name used in panel titles
+    gdf, geom : Germany geometry
+    outfile   : str
+    suptitle  : str, optional
+    """
+    from matplotlib.gridspec import GridSpec
+
+    _DEFAULT_BIAS_COLORS = [
+        "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#f7f7f7",
+        "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f",
+    ]
+
+    n = len(indices)
+    PC   = ccrs.PlateCarree()
+    PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
+
+    fig = plt.figure(figsize=(15.5, 4.8 * n))
+    fig.patch.set_facecolor("white")
+    if suptitle:
+        fig.suptitle(suptitle, fontsize=11, fontweight="normal", y=1.00)
+
+    gs = GridSpec(n, 5, width_ratios=[1, 0.08, 1, 0.08, 1],
+                  left=0.02, right=0.92,
+                  top=0.94 if suptitle else 0.97,
+                  bottom=0.03,
+                  hspace=0.14, wspace=0.0)
+
+    _all_tags = list("abcdefghijklmnopqrstuvwxyz")
+
+    for row, idx in enumerate(indices):
+        obs_clim = idx["obs_clim"]
+        mod_clim = idx["mod_clim"]
+        diff     = (mod_clim - obs_clim).astype(np.float32)
+
+        clim_cols = _interp_colors(idx["clim_colors"], len(idx["clim_levels"]) - 1)
+        cmap_clim = mcolors.ListedColormap(clim_cols)
+        cmap_clim.set_under(clim_cols[0]); cmap_clim.set_over(clim_cols[-1])
+        norm_clim = mcolors.BoundaryNorm(idx["clim_levels"], cmap_clim.N)
+
+        diff_cols = _interp_colors(_DEFAULT_BIAS_COLORS, len(idx["clim_diff_levels"]) - 1)
+        cmap_diff = mcolors.ListedColormap(diff_cols)
+        cmap_diff.set_under(diff_cols[0]); cmap_diff.set_over(diff_cols[-1])
+        norm_diff = mcolors.BoundaryNorm(idx["clim_diff_levels"], cmap_diff.N)
+
+        diff_fmt = idx.get("diff_tick_fmt", "%.2f")
+        clim_lbl = idx.get("clim_label", "")
+        t0, t1, t2 = (f"({_all_tags[row*3+k]})" for k in range(3))
+
+        panels = [
+            dict(ax=fig.add_subplot(gs[row, 0], projection=PROJ),
+                 da=obs_clim, cmap=cmap_clim, norm=norm_clim,
+                 lvls=idx["clim_levels"], tag=t0,
+                 title=f"E-OBS · {idx['row_label']}",
+                 fmt=idx["tick_fmt"], lbl=clim_lbl),
+            dict(ax=fig.add_subplot(gs[row, 2], projection=PROJ),
+                 da=mod_clim, cmap=cmap_clim, norm=norm_clim,
+                 lvls=idx["clim_levels"], tag=t1,
+                 title=f"ICON-CLM · {idx['row_label']}",
+                 fmt=idx["tick_fmt"], lbl=clim_lbl),
+            dict(ax=fig.add_subplot(gs[row, 4], projection=PROJ),
+                 da=diff, cmap=cmap_diff, norm=norm_diff,
+                 lvls=idx["clim_diff_levels"], tag=t2,
+                 title=f"Diff · {idx['row_label']}",
+                 fmt=diff_fmt, lbl=clim_lbl),
+        ]
+
+        for p in panels:
+            ax = p["ax"]
+            ax.set_extent(MAP_EXTENT, crs=PC)
+            ax.set_facecolor("#d6e8f2")
+            ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
+            ax.add_feature(cfeature.BORDERS.with_scale("10m"),
+                           linewidth=0.3, edgecolor="0.45", zorder=2)
+
+            fine = interp_display(p["da"])
+            mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
+            arr  = apply_mask(fine.values, mask)
+
+            ax.contourf(fine["lon"].values, fine["lat"].values, arr,
+                        levels=p["lvls"], cmap=p["cmap"], norm=p["norm"],
+                        transform=PC, extend="both", antialiased=True, zorder=3)
 
             ax.add_geometries(gdf.geometry, PC, facecolor="none",
                               edgecolor="black", linewidth=0.55, zorder=6)

@@ -100,8 +100,7 @@ from utils import (
     set_ipcc_style, plot_obs_bias_maps, plot_germany_series,
     taylor_diagram, plot_trend_heatmap,
     plot_climatology_maps,
-    plot_grouped_trend_maps, plot_three_panel_trend_maps,
-    plot_index_summary_figure,
+    plot_grouped_trend_maps, plot_grouped_clim_maps, plot_three_panel_trend_maps,
     # constants
     REF_START, REF_END, ANOM_START, ANOM_END, DPI, DRY_DAY_MAX, DIFF_COLORS,
 )
@@ -703,23 +702,6 @@ if __name__ == "__main__":
         bias_tick_fmt="%.2f",
     )
 
-    # ── T90p combined summary (mean + trend, 2 rows × 3 panels) ──────────────
-    print("T90p: generating combined mean+trend summary figure …")
-    plot_index_summary_figure(
-        obs_clim  = t90_days_obs.mean("year",   skipna=True),
-        mod_clim  = t90_days_model.mean("year", skipna=True),
-        annual_obs=t90_days_obs, annual_model=t90_days_model,
-        gdf=gdf, geom=geom,
-        outfile   = os.path.join(FIGDIR, "T90p_summary.png"),
-        clim_levels=T90P_DIST_LEVELS, clim_colors=T90P_DIST_COLORS,
-        clim_label="days/summer",
-        clim_diff_levels=T90P_DIST_BIAS_LEVELS, clim_diff_colors=BIAS_DIV_COLORS,
-        trend_levels=TEMP_LEVELS, trend_colors=TEMP_COLORS,
-        trend_unit="days/decade",
-        clim_tick_fmt="%.0f", trend_tick_fmt="%.1f",
-        suptitle="T90p — Hot Days",
-    )
-
     # ── HWN: Heatwave Number (≥3 consecutive T90p days) ──────────────────────
     print("HWN: computing heatwave number (may take several minutes) …")
     hwn_model = annual_heatwave_number(tas_model, t90_model)
@@ -740,18 +722,6 @@ if __name__ == "__main__":
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
         heatmap_rows=heatmap_rows,
     )
-    plot_climatology_maps(
-        obs_clim = hwn_obs.mean("year",   skipna=True),
-        mod_clim = hwn_model.mean("year", skipna=True),
-        gdf=gdf, geom=geom,
-        outfile  = os.path.join(FIGDIR, "Heatwave_number_spatial_mean.png"),
-        levels   = HWN_CLIM_LEVELS, colors=HWN_CLIM_COLORS,
-        cbar_label = "HWN mean [events/summer]", tick_fmt="%.1f",
-        suptitle = "HWN — Mean heatwave number 1950–2022",
-        bias_levels=HWN_BIAS_LEVELS, bias_colors=BIAS_DIV_COLORS,
-        bias_tick_fmt="%.2f",
-    )
-
     # ── HWD: Heatwave Duration (mean days per heatwave event) ─────────────────
     # Computed from the same hot-day binary mask as HWN but averaging event
     # lengths instead of counting events.  Seasons with no heatwave are NaN.
@@ -774,19 +744,30 @@ if __name__ == "__main__":
         ts_obs_store=ts_obs_store, ts_mod_store=ts_mod_store,
         heatmap_rows=heatmap_rows,
     )
-    plot_climatology_maps(
-        obs_clim = hwd_obs.mean("year",   skipna=True),
-        mod_clim = hwd_model.mean("year", skipna=True),
+
+    # ── Combined heatwave climatology figure (HWN + HWD, 2 rows × 3 cols) ────
+    print("Heatwave: generating combined HWN+HWD climatology map …")
+    plot_grouped_clim_maps(
+        indices=[
+            dict(obs_clim=hwn_obs.mean("year", skipna=True),
+                 mod_clim=hwn_model.mean("year", skipna=True),
+                 clim_levels=HWN_CLIM_LEVELS, clim_colors=HWN_CLIM_COLORS,
+                 clim_diff_levels=HWN_BIAS_LEVELS,
+                 clim_label="events/summer", tick_fmt="%.1f", diff_tick_fmt="%.2f",
+                 row_label="HWN — Heatwave Number"),
+            dict(obs_clim=hwd_obs.mean("year", skipna=True),
+                 mod_clim=hwd_model.mean("year", skipna=True),
+                 clim_levels=HWD_CLIM_LEVELS, clim_colors=HWD_CLIM_COLORS,
+                 clim_diff_levels=HWD_BIAS_LEVELS,
+                 clim_label="days/event", tick_fmt="%.1f", diff_tick_fmt="%.2f",
+                 row_label="HWD — Mean Duration"),
+        ],
         gdf=gdf, geom=geom,
-        outfile  = os.path.join(FIGDIR, "Heatwave_duration_spatial_mean.png"),
-        levels   = HWD_CLIM_LEVELS, colors=HWD_CLIM_COLORS,
-        cbar_label = "HWD mean [days/event]", tick_fmt="%.1f",
-        suptitle = "HWD — Mean heatwave duration 1950–2022",
-        bias_levels=HWD_BIAS_LEVELS, bias_colors=BIAS_DIV_COLORS,
-        bias_tick_fmt="%.2f",
+        outfile=os.path.join(FIGDIR, "HW_combined_clim_map.png"),
+        suptitle="Heatwave Climatology 1950–2022 — HWN and HWD",
     )
 
-    # ── Combined heatwave trend figure (HWN + HWD, 2 rows × 2 cols) ──────────
+    # ── Combined heatwave trend figure (HWN + HWD, 2 rows × 3 cols) ──────────
     print("Heatwave: generating combined HWN+HWD trend map …")
     plot_grouped_trend_maps(
         indices=[
@@ -840,22 +821,6 @@ if __name__ == "__main__":
         trend_unit="mm/wet-day/decade", tick_fmt="%.2f",
         suptitle="SDII — Theil-Sen Trend 1950–2022",
     )
-    # ── SDII combined summary (mean + trend, 2 rows × 3 panels) ─────────────
-    print("SDII: generating combined mean+trend summary figure …")
-    plot_index_summary_figure(
-        obs_clim  = sdii_obs.mean("year",   skipna=True),
-        mod_clim  = sdii_model.mean("year", skipna=True),
-        annual_obs=sdii_obs, annual_model=sdii_model,
-        gdf=gdf, geom=geom,
-        outfile   = os.path.join(FIGDIR, "SDII_summary.png"),
-        clim_levels=SDII_CLIM_LEVELS, clim_colors=SDII_CLIM_COLORS,
-        clim_label="mm/wet-day",
-        clim_diff_levels=SDII_BIAS_LEVELS, clim_diff_colors=BIAS_DIV_COLORS,
-        trend_levels=SDII_LEVELS, trend_colors=PREC_COLORS,
-        trend_unit="mm/wet-day/decade",
-        clim_tick_fmt="%.1f", trend_tick_fmt="%.2f",
-        suptitle="SDII — Daily Intensity",
-    )
     plot_climatology_maps(
         obs_clim = sdii_obs.mean("year",   skipna=True),
         mod_clim = sdii_model.mean("year", skipna=True),
@@ -904,23 +869,6 @@ if __name__ == "__main__":
         suptitle = "CDD — Mean climatology 1950–2022",
         bias_levels=CDD_BIAS_LEVELS, bias_colors=BIAS_DIV_COLORS,
         bias_tick_fmt="%.1f",
-    )
-
-    # ── CDD combined summary (mean + trend, 2 rows × 3 panels) ───────────────
-    print("CDD: generating combined mean+trend summary figure …")
-    plot_index_summary_figure(
-        obs_clim  = cdd_obs.mean("year",   skipna=True),
-        mod_clim  = cdd_model.mean("year", skipna=True),
-        annual_obs=cdd_obs, annual_model=cdd_model,
-        gdf=gdf, geom=geom,
-        outfile   = os.path.join(FIGDIR, "CDD_summary.png"),
-        clim_levels=CDD_CLIM_LEVELS, clim_colors=CDD_CLIM_COLORS,
-        clim_label="days/summer",
-        clim_diff_levels=CDD_BIAS_LEVELS, clim_diff_colors=BIAS_DIV_COLORS,
-        trend_levels=CDD_LEVELS, trend_colors=CDD_COLORS,
-        trend_unit="days/decade",
-        clim_tick_fmt="%.0f", trend_tick_fmt="%.2f",
-        suptitle="CDD — Consecutive Dry Days",
     )
 
     # ── SPI: Standardised Precipitation Index (JJA seasonal total) ───────────
