@@ -53,7 +53,7 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
 from utils import (
-    load_field, keep_jja, annual_jja_mean,
+    load_field,
     reference_mean, compute_anomalies, area_mean,
     load_country_shape, interp_display, build_mask, apply_mask,
     style_axis,
@@ -84,13 +84,9 @@ INDICES = [
 ]
 
 # ── driver file configuration ─────────────────────────────────────────────────
-# Files regridded to DE-0.25 (0.25° Germany domain) from the original EUR-12.
-# Naming convention: {var}_DE-0.25_ERA5_evaluation_..._day_19500101-20241231.nc
-_SUFFIX = (
-    "DE-0.25_ERA5_evaluation_r1i1p1f1_"
-    "CLMcom-Hereon_ICON-CLM-202407-1-1_v1-r2_day_"
-    "19500101-20241231.nc"
-)
+# JJA seasonal mean files produced by CDO (one value per year, 1950-2022).
+# Naming convention: {var}_DE-0.25_JJA_1950-2022.nc
+_SUFFIX = "DE-0.25_JJA_1950-2022.nc"
 
 DRIVER_FILES = {
     "PSL":  f"psl_{_SUFFIX}",
@@ -447,11 +443,12 @@ if __name__ == "__main__":
         scale = DRIVER_SCALE.get(dname, 1.0)
         print(f"  {dname} ({DRIVER_LONG[dname]}) ...")
         try:
-            da     = keep_jja(load_field(fpath, vname))
+            da = load_field(fpath, vname)
             if scale != 1.0:
                 da = da * scale
-            annual = annual_jja_mean(da)
-            # Clip to analysis period (driver files extend to 2024)
+            # CDO JJA mean: time dim has one step per year → extract year
+            annual = da.assign_coords(year=("time", da["time"].dt.year.values))
+            annual = annual.swap_dims({"time": "year"}).drop_vars("time")
             annual = annual.sel(year=slice(int(START_YEAR), int(END_YEAR)))
             clim   = reference_mean(annual, REF_START, REF_END)
             anom   = compute_anomalies(annual, clim)
