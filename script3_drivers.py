@@ -70,7 +70,7 @@ os.makedirs(FIGDIR, exist_ok=True)
 os.makedirs(TABDIR, exist_ok=True)
 
 GERMANY_SHP  = "/work/jbiliham/shapefile_Germany/gadm41_DEU_0.shp"
-INDEX_NC_DIR = "output_extremes/netcdf"   # produced by script2
+INDEX_NC_DIR = "/archive1/hamza_data/DE_files/DE_1950-2022/extremes_indices/output_extremes/netcdf"   # produced by script2
 
 # ── extreme indices to analyse ────────────────────────────────────────────────
 # Tuple: (internal_name, nc_stem)
