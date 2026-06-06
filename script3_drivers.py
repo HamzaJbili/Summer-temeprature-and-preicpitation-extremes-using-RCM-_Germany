@@ -3,21 +3,40 @@ script3_drivers.py
 ------------------
 Driver analysis for German summer extremes — correlation approach.
 
-For every extreme index (Germany-average JJA series, 1950–2022) the
-Pearson and Spearman rank correlations are computed against each
-large-scale / surface driver variable (also Germany-average JJA means).
-The full 6-index × 7-driver correlation structure is condensed into a
-single heatmap figure, complemented by per-index correlation bar charts
-and CSV tables.
+The analysis has three parts:
 
-Why correlation (not composite maps)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  1.  DRIVER OVERVIEW
+      A multi-panel time-series figure of every driver variable
+      (Germany-average JJA mean, 1950–2022) with its linear trend, so
+      the interannual behaviour that produces the correlations is visible.
+
+  2.  GROUPED INDEX–DRIVER CORRELATION HEATMAPS
+      Instead of a blanket 6-index × 7-driver matrix the indices are split
+      into two physically motivated groups, each correlated only against
+      its mechanistically relevant drivers:
+
+        TEMPERATURE   T90p, HWN, HWD  ×  PSL, SHF, LHF, CLT      (3×4)
+        PRECIPITATION SDII, CDD, SPI  ×  PSL, LHF, CLT, CAPE, CIN (3×5)
+
+      Each group yields a Pearson and a Spearman heatmap plus per-index
+      correlation bar charts.
+
+  3.  DRIVER–DRIVER CORRELATION MATRIX
+      A symmetric Pearson matrix of all drivers against each other,
+      documenting the multicollinearity among the predictors
+      (PSL/SHF/LHF/CLT are physically linked: high pressure → clear sky →
+      dry soil → high sensible / low latent heat flux).  This lets the
+      index–driver correlations be interpreted with the right caution.
+
+Why grouped correlation (not a blanket matrix, not composite maps)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   Correlating an extreme-index time series with candidate driver
   variables is the standard, compact way to quantify the strength and
   sign of each index–driver link (Hirschi et al. 2011; Mueller &
-  Seneviratne 2012).  One heatmap summarises all 42 relationships,
-  avoiding the 40+ separate composite maps that a full composite
-  treatment would require.
+  Seneviratne 2012).  Two grouped heatmaps summarise the physically
+  meaningful relationships, avoiding both the 40+ separate composite maps
+  a full composite treatment would need and the physically unmotivated
+  pairings of a blanket matrix (e.g. CAPE vs heat-wave duration).
 
 Interpretation note — model-internal physical-consistency analysis
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -30,13 +49,13 @@ Interpretation note — model-internal physical-consistency analysis
 
   This framing is defensible for an ERA5-driven hindcast because the
   large-scale circulation is constrained by the driving reanalysis at
-  the lateral boundaries, so the dynamical drivers (PSL, wind) remain
-  reliable even where the model has local biases in precipitation
-  extremes (Kotlarski et al. 2014; Vautard et al. 2021).  The same
-  model-internal driver approach is used by Loikith et al. (2015) for
-  reanalysis-driven RCM temperature extremes.  For precipitation indices
-  (CDD, SDII, SPI) the links reflect the model's internal physics rather
-  than necessarily the observed system, and are interpreted as such.
+  the lateral boundaries, so the dynamical drivers (PSL) remain reliable
+  even where the model has local biases in precipitation extremes
+  (Kotlarski et al. 2014; Vautard et al. 2021).  The same model-internal
+  driver approach is used by Loikith et al. (2015) for reanalysis-driven
+  RCM temperature extremes.  For precipitation indices (CDD, SDII, SPI)
+  the links reflect the model's internal physics rather than necessarily
+  the observed system, and are interpreted as such.
 
 Driver variables (all ICON-CLM, JJA seasonal mean, DE-0.25 domain)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -67,7 +86,7 @@ import xarray as xr
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
-from scipy.stats import pearsonr, spearmanr
+from scipy.stats import pearsonr, spearmanr, linregress
 
 from utils import (
     load_field, area_mean,
@@ -87,23 +106,33 @@ os.makedirs(TABDIR, exist_ok=True)
 GERMANY_SHP  = "/work/jbiliham/shapefile_Germany/gadm41_DEU_0.shp"
 INDEX_NC_DIR = "/archive1/hamza_data/DE_files/DE_1950-2022/extremes_indices/output_extremes/netcdf"   # produced by script2
 
-# ── extreme indices to analyse ────────────────────────────────────────────────
+# ── extreme indices, split into two physically motivated groups ───────────────
 # Tuple: (display_name, nc_stem, row_label)
-INDICES = [
+TEMP_INDICES = [
     ("T90p_exceedance_days", "T90p_days", "T90p"),
     ("Heatwave_number",      "HWN",       "HWN"),
     ("Heatwave_duration",    "HWD",       "HWD"),
+]
+PRECIP_INDICES = [
     ("SDII",                 "SDII",      "SDII"),
     ("CDD",                  "CDD",       "CDD"),
     ("SPI",                  "SPI",       "SPI"),
 ]
+
+# Drivers assigned to each group on physical grounds.
+#   Temperature extremes:  anticyclonic blocking (PSL), surface energy
+#                          partition (SHF, LHF), radiation control (CLT).
+#   Precipitation extremes: blocking (PSL), moisture supply (LHF), cloud
+#                          cover (CLT), convective fuel / trigger (CAPE, CIN).
+TEMP_DRIVERS   = ["PSL", "SHF", "LHF", "CLT"]
+PRECIP_DRIVERS = ["PSL", "LHF", "CLT", "CAPE", "CIN"]
 
 # ── driver file configuration ─────────────────────────────────────────────────
 # JJA seasonal mean files produced by CDO (one value per year, 1950-2022).
 # Naming convention: {var}_DE-0.25_JJA_1950-2022.nc
 _SUFFIX = "DE-0.25_JJA_1950-2022.nc"
 
-# Driver order defines the heatmap column order.
+# Full driver list (used for the overview time series and the driver matrix).
 DRIVER_ORDER = ["PSL", "SHF", "LHF", "CLT", "WIND", "CAPE", "CIN"]
 
 DRIVER_FILES = {
@@ -142,6 +171,17 @@ DRIVER_LONG = {
     "WIND": "Surface wind speed",
     "CAPE": "Convective available PE",
     "CIN":  "Convective inhibition",
+}
+
+# Units for the driver time-series y-axes
+DRIVER_UNITS = {
+    "PSL":  "hPa",
+    "SHF":  "W m$^{-2}$",
+    "LHF":  "W m$^{-2}$",
+    "CLT":  "%",
+    "WIND": "m s$^{-1}$",
+    "CAPE": "J kg$^{-1}$",
+    "CIN":  "J kg$^{-1}$",
 }
 
 # Diverging blue-white-red palette for the correlation heatmap
@@ -203,6 +243,123 @@ def _stars(p):
     if not np.isfinite(p):
         return ""
     return "**" if p < 0.01 else ("*" if p < 0.05 else "")
+
+
+# ── driver overview: multi-panel time series ───────────────────────────────────
+def plot_driver_overview(series_dict, drivers, outfile):
+    """
+    Multi-panel time-series of every driver (Germany-average JJA mean,
+    1950–2022) with a linear trend line and slope/significance annotation.
+    """
+    n = len(drivers)
+    ncol = 2
+    nrow = int(np.ceil(n / ncol))
+
+    fig, axes = plt.subplots(nrow, ncol, figsize=(11, 2.1 * nrow),
+                             sharex=True)
+    fig.patch.set_facecolor("white")
+    axes = np.atleast_1d(axes).ravel()
+
+    for ax, dname in zip(axes, drivers):
+        s = series_dict[dname]
+        years = s["year"].values.astype(int)
+        vals  = s.values
+
+        good = np.isfinite(vals)
+        ax.plot(years[good], vals[good], color="#2166ac", lw=1.2,
+                marker="o", ms=2.5, mfc="white", mec="#2166ac", mew=0.5)
+
+        # Linear trend
+        if good.sum() >= 10:
+            sl, ic, r, p, se = linregress(years[good], vals[good])
+            ax.plot(years[good], ic + sl * years[good],
+                    color="#b2182b", lw=1.4, ls="--")
+            decade = sl * 10.0
+            ax.set_title(
+                f"{dname} — {DRIVER_LONG[dname]}   "
+                f"(trend {decade:+.2g} {DRIVER_UNITS[dname]}/dec{_stars(p)})",
+                fontsize=8.5)
+        else:
+            ax.set_title(f"{dname} — {DRIVER_LONG[dname]}", fontsize=8.5)
+
+        ax.set_ylabel(DRIVER_UNITS[dname], fontsize=8)
+        ax.tick_params(labelsize=8)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.grid(True, axis="y", lw=0.3, alpha=0.5)
+
+    # Hide any unused panels
+    for ax in axes[n:]:
+        ax.set_visible(False)
+
+    # X label only on the bottom row of visible panels
+    for ax in axes[:n][-ncol:]:
+        ax.set_xlabel("Year", fontsize=8)
+
+    fig.suptitle("ICON-CLM JJA-mean drivers, Germany average, 1950–2022\n"
+                 "(red dashed = linear trend; * p<0.05, ** p<0.01)",
+                 fontsize=10, y=1.0)
+    plt.tight_layout()
+    fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ── driver–driver correlation matrix ───────────────────────────────────────────
+def plot_driver_matrix(series_dict, drivers, outfile):
+    """
+    Symmetric Pearson correlation matrix among the driver variables,
+    documenting the multicollinearity of the predictors.  Returns the
+    matrix as a DataFrame for CSV export.
+    """
+    n = len(drivers)
+    mat = np.full((n, n), np.nan)
+    for i, di in enumerate(drivers):
+        for j, dj in enumerate(drivers):
+            si, sj = series_dict[di], series_dict[dj]
+            a = pd.DataFrame({"year": si["year"].values.astype(int),
+                              "a": si.values}).dropna()
+            b = pd.DataFrame({"year": sj["year"].values.astype(int),
+                              "b": sj.values}).dropna()
+            m = a.merge(b, on="year")
+            if len(m) >= 10:
+                mat[i, j] = pearsonr(m["a"], m["b"])[0]
+
+    cmap = mcolors.LinearSegmentedColormap.from_list("corr", CORR_COLORS)
+    norm = mcolors.Normalize(vmin=-1.0, vmax=1.0)
+
+    fig, ax = plt.subplots(figsize=(0.85 * n + 2.0, 0.85 * n + 1.6))
+    fig.patch.set_facecolor("white")
+    im = ax.imshow(mat, cmap=cmap, norm=norm, aspect="auto")
+
+    for i in range(n):
+        for j in range(n):
+            r = mat[i, j]
+            if not np.isfinite(r):
+                continue
+            txt_color = "white" if abs(r) > 0.55 else "#1a1a1a"
+            ax.text(j, i, f"{r:+.2f}", ha="center", va="center",
+                    fontsize=8, color=txt_color)
+
+    ax.set_xticks(np.arange(n)); ax.set_yticks(np.arange(n))
+    ax.set_xticklabels(drivers, fontsize=9)
+    ax.set_yticklabels(drivers, fontsize=9, fontweight="bold")
+    ax.set_xticks(np.arange(-0.5, n, 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, n, 1), minor=True)
+    ax.grid(which="minor", color="white", linewidth=1.5)
+    ax.tick_params(which="minor", length=0)
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+
+    ax.set_title("Driver–driver correlation (Pearson)\n"
+                 "ICON-CLM Germany average, JJA 1950–2022", fontsize=10, pad=8)
+    cb = fig.colorbar(im, ax=ax, fraction=0.045, pad=0.03)
+    cb.set_label("Pearson r", fontsize=9)
+    cb.ax.tick_params(labelsize=8)
+    plt.tight_layout()
+    fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+
+    return pd.DataFrame(mat, index=drivers, columns=drivers)
 
 
 # ── heatmap figure ─────────────────────────────────────────────────────────────
@@ -302,6 +459,86 @@ def plot_correlation_bars(corr_df, index_label, outfile):
     plt.close(fig)
 
 
+# ── one correlation group (a set of indices vs a set of drivers) ────────────────
+def run_group(group_name, indices, drivers, index_series_loader,
+              driver_series, long_rows):
+    """
+    Compute correlation matrices for one index group against its drivers,
+    write the Pearson and Spearman heatmaps, per-index bar charts, and the
+    wide-format CSV matrices.  Appends tidy rows to ``long_rows``.
+    """
+    avail_rows = []
+    rP, pP, rS, pS = [], [], [], []
+
+    for display_name, nc_stem, row_label in indices:
+        try:
+            index_series = index_series_loader(nc_stem, "ICON")
+        except FileNotFoundError as e:
+            print(f"  Skipping {display_name}: {e}")
+            continue
+
+        print(f"\n[{group_name}] Correlating: {display_name}")
+        avail_rows.append((display_name, row_label))
+
+        rowP, rowPp, rowS, rowSp = [], [], [], []
+        for dname in drivers:
+            res = correlate(index_series, driver_series[dname])
+            rowP.append(res["pearson_r"]);   rowPp.append(res["pearson_p"])
+            rowS.append(res["spearman_r"]);  rowSp.append(res["spearman_p"])
+
+            long_rows.append({
+                "group":       group_name,
+                "index":       display_name,
+                "index_label": row_label,
+                "driver":      dname,
+                "driver_long": DRIVER_LONG[dname],
+                "n":           res["n"],
+                "pearson_r":   round(res["pearson_r"], 3)  if np.isfinite(res["pearson_r"])  else np.nan,
+                "pearson_p":   round(res["pearson_p"], 4)  if np.isfinite(res["pearson_p"])  else np.nan,
+                "spearman_r":  round(res["spearman_r"], 3) if np.isfinite(res["spearman_r"]) else np.nan,
+                "spearman_p":  round(res["spearman_p"], 4) if np.isfinite(res["spearman_p"]) else np.nan,
+            })
+            print(f"  {dname:5s}: r={res['pearson_r']:+.2f} (p={res['pearson_p']:.3f})  "
+                  f"rho={res['spearman_r']:+.2f} (p={res['spearman_p']:.3f})")
+
+        rP.append(rowP); pP.append(rowPp); rS.append(rowS); pS.append(rowSp)
+
+        # Per-index Pearson bar chart
+        idx_df = pd.DataFrame({"driver": drivers,
+                               "pearson_r": rowP, "pearson_p": rowPp})
+        plot_correlation_bars(
+            idx_df, row_label,
+            outfile=os.path.join(FIGDIR, f"{display_name}_driver_correlations_bar.png"))
+
+    if not avail_rows:
+        print(f"  [{group_name}] No index files available — skipping heatmaps.")
+        return
+
+    rP = np.array(rP); pP = np.array(pP)
+    rS = np.array(rS); pS = np.array(pS)
+    row_labels = [lbl for _, lbl in avail_rows]
+    tag = group_name.lower()
+
+    plot_correlation_heatmap(
+        rP, pP, row_labels, drivers,
+        outfile=os.path.join(FIGDIR, f"heatmap_{tag}_pearson.png"),
+        title=f"{group_name} extremes — driver correlation (Pearson)\n"
+              "ICON-CLM Germany average, JJA 1950–2022",
+        cbar_label="Pearson r")
+    plot_correlation_heatmap(
+        rS, pS, row_labels, drivers,
+        outfile=os.path.join(FIGDIR, f"heatmap_{tag}_spearman.png"),
+        title=f"{group_name} extremes — driver correlation (Spearman rank)\n"
+              "ICON-CLM Germany average, JJA 1950–2022",
+        cbar_label="Spearman ρ")
+
+    pd.DataFrame(rP, index=row_labels, columns=drivers).to_csv(
+        os.path.join(TABDIR, f"correlation_matrix_{tag}_pearson.csv"))
+    pd.DataFrame(rS, index=row_labels, columns=drivers).to_csv(
+        os.path.join(TABDIR, f"correlation_matrix_{tag}_spearman.csv"))
+    print(f"  [{group_name}] heatmaps + matrices written.")
+
+
 # ── main ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
 
@@ -326,97 +563,45 @@ if __name__ == "__main__":
         raise SystemExit("No driver files could be loaded — check filenames.")
     print(f"\nAvailable drivers: {avail_drivers}")
 
-    # ── Build correlation matrices (indices × drivers) ────────────────────────
-    avail_index_rows = []        # (display_name, row_label) actually present
-    rP = []                      # Pearson r rows
-    pP = []                      # Pearson p rows
-    rS = []                      # Spearman r rows
-    pS = []                      # Spearman p rows
-    long_rows = []               # tidy CSV rows
+    # ── 1. Driver overview time series (all available drivers) ────────────────
+    print("\nGenerating driver overview time series ...")
+    plot_driver_overview(
+        driver_series, avail_drivers,
+        outfile=os.path.join(FIGDIR, "driver_overview_timeseries.png"))
 
-    for display_name, nc_stem, row_label in INDICES:
-        try:
-            index_series = load_index_series(nc_stem, "ICON")
-        except FileNotFoundError as e:
-            print(f"  Skipping {display_name}: {e}")
-            continue
+    # ── 2. Driver–driver correlation matrix ───────────────────────────────────
+    print("Generating driver–driver correlation matrix ...")
+    dmat = plot_driver_matrix(
+        driver_series, avail_drivers,
+        outfile=os.path.join(FIGDIR, "driver_correlation_matrix.png"))
+    dmat.to_csv(os.path.join(TABDIR, "driver_correlation_matrix.csv"))
 
-        print(f"\n{'='*60}\nCorrelating: {display_name}")
-        avail_index_rows.append((display_name, row_label))
+    # ── 3. Grouped index–driver correlation heatmaps ──────────────────────────
+    long_rows = []
 
-        rowP, rowPp, rowS, rowSp = [], [], [], []
-        for dname in avail_drivers:
-            res = correlate(index_series, driver_series[dname])
-            rowP.append(res["pearson_r"]);   rowPp.append(res["pearson_p"])
-            rowS.append(res["spearman_r"]);  rowSp.append(res["spearman_p"])
+    temp_drivers   = [d for d in TEMP_DRIVERS   if d in driver_series]
+    precip_drivers = [d for d in PRECIP_DRIVERS if d in driver_series]
 
-            long_rows.append({
-                "index":       display_name,
-                "index_label": row_label,
-                "driver":      dname,
-                "driver_long": DRIVER_LONG[dname],
-                "n":           res["n"],
-                "pearson_r":   round(res["pearson_r"], 3)  if np.isfinite(res["pearson_r"])  else np.nan,
-                "pearson_p":   round(res["pearson_p"], 4)  if np.isfinite(res["pearson_p"])  else np.nan,
-                "spearman_r":  round(res["spearman_r"], 3) if np.isfinite(res["spearman_r"]) else np.nan,
-                "spearman_p":  round(res["spearman_p"], 4) if np.isfinite(res["spearman_p"]) else np.nan,
-            })
-            print(f"  {dname:5s}: r={res['pearson_r']:+.2f} (p={res['pearson_p']:.3f})  "
-                  f"rho={res['spearman_r']:+.2f} (p={res['spearman_p']:.3f})")
+    run_group("Temperature", TEMP_INDICES, temp_drivers,
+              load_index_series, driver_series, long_rows)
+    run_group("Precipitation", PRECIP_INDICES, precip_drivers,
+              load_index_series, driver_series, long_rows)
 
-        rP.append(rowP); pP.append(rowPp); rS.append(rowS); pS.append(rowSp)
-
-        # Per-index Pearson bar chart
-        idx_df = pd.DataFrame({
-            "driver":    avail_drivers,
-            "pearson_r": rowP,
-            "pearson_p": rowPp,
-        })
-        plot_correlation_bars(
-            idx_df, row_label,
-            outfile=os.path.join(FIGDIR, f"{display_name}_driver_correlations_bar.png"),
-        )
-
-    if not avail_index_rows:
+    if not long_rows:
         raise SystemExit("No index files could be loaded — run script2 first.")
 
-    rP = np.array(rP); pP = np.array(pP)
-    rS = np.array(rS); pS = np.array(pS)
-    row_labels = [lbl for _, lbl in avail_index_rows]
-
-    # ── Main figures: Pearson and Spearman heatmaps ───────────────────────────
-    print("\nGenerating correlation heatmaps ...")
-    plot_correlation_heatmap(
-        rP, pP, row_labels, avail_drivers,
-        outfile=os.path.join(FIGDIR, "driver_correlation_heatmap_pearson.png"),
-        title="Extreme index — driver correlation (Pearson)\n"
-              "ICON-CLM Germany average, JJA 1950–2022",
-        cbar_label="Pearson r",
-    )
-    plot_correlation_heatmap(
-        rS, pS, row_labels, avail_drivers,
-        outfile=os.path.join(FIGDIR, "driver_correlation_heatmap_spearman.png"),
-        title="Extreme index — driver correlation (Spearman rank)\n"
-              "ICON-CLM Germany average, JJA 1950–2022",
-        cbar_label="Spearman ρ",
-    )
-
-    # ── Tidy CSV table (all index–driver pairs) ───────────────────────────────
+    # ── Tidy CSV table (all index–driver pairs, both groups) ──────────────────
     pd.DataFrame(long_rows).to_csv(
         os.path.join(TABDIR, "all_indices_driver_correlations.csv"), index=False)
 
-    # ── Wide CSV matrices (Pearson r and Spearman rho) ────────────────────────
-    pd.DataFrame(rP, index=row_labels, columns=avail_drivers).to_csv(
-        os.path.join(TABDIR, "correlation_matrix_pearson.csv"))
-    pd.DataFrame(rS, index=row_labels, columns=avail_drivers).to_csv(
-        os.path.join(TABDIR, "correlation_matrix_spearman.csv"))
-
     print("\n" + "=" * 60)
     print("Script 3 complete.")
-    print(f"  Heatmaps  → {FIGDIR}/driver_correlation_heatmap_pearson.png")
-    print(f"              {FIGDIR}/driver_correlation_heatmap_spearman.png")
-    print(f"  Bar charts→ {FIGDIR}/<index>_driver_correlations_bar.png")
-    print(f"  Tables    → {TABDIR}/all_indices_driver_correlations.csv")
-    print(f"              {TABDIR}/correlation_matrix_pearson.csv")
-    print(f"              {TABDIR}/correlation_matrix_spearman.csv")
+    print(f"  Driver overview  → {FIGDIR}/driver_overview_timeseries.png")
+    print(f"  Driver matrix    → {FIGDIR}/driver_correlation_matrix.png")
+    print(f"  Temp heatmaps    → {FIGDIR}/heatmap_temperature_[pearson|spearman].png")
+    print(f"  Precip heatmaps  → {FIGDIR}/heatmap_precipitation_[pearson|spearman].png")
+    print(f"  Bar charts       → {FIGDIR}/<index>_driver_correlations_bar.png")
+    print(f"  Tables           → {TABDIR}/all_indices_driver_correlations.csv")
+    print(f"                     {TABDIR}/correlation_matrix_<group>_[pearson|spearman].csv")
+    print(f"                     {TABDIR}/driver_correlation_matrix.csv")
     print("=" * 60)
