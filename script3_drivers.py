@@ -3,7 +3,7 @@ script3_drivers.py
 ------------------
 Driver analysis for German summer extremes — correlation approach.
 
-The analysis has three parts:
+The analysis has four parts:
 
   1.  DRIVER OVERVIEW
       A multi-panel time-series figure of every driver variable
@@ -19,7 +19,7 @@ The analysis has three parts:
         PRECIPITATION SDII, CDD, SPI  ×  PSL, LHF, CLT, CAPE, CIN (3×5)
 
       Each group yields a Pearson and a Spearman heatmap plus per-index
-      correlation bar charts.
+      correlation bar charts.  This quantifies HOW STRONG each link is.
 
   3.  DRIVER–DRIVER CORRELATION MATRIX
       A symmetric Pearson matrix of all drivers against each other,
@@ -27,6 +27,18 @@ The analysis has three parts:
       (PSL/SHF/LHF/CLT are physically linked: high pressure → clear sky →
       dry soil → high sensible / low latent heat flux).  This lets the
       index–driver correlations be interpreted with the right caution.
+
+  4.  COMPOSITE ANOMALY MAPS
+      For ONE representative index per group (T90p for temperature, SDII
+      for precipitation) the upper-tercile (hottest / wettest-intensity)
+      summers are selected and the anomaly field of each relevant driver
+      is composited over those years, as a single multi-panel map figure
+      per group.  This shows WHERE in Germany the driver signal sits —
+      the spatial complement to the (non-spatial) correlation heatmaps.
+      Restricting composites to one index per group keeps the output to
+      two map figures instead of one map per index×driver pair.  The
+      composite-during-extreme-years method follows Hirschi et al. (2011)
+      and Whan et al. (2015).
 
 Why grouped correlation (not a blanket matrix, not composite maps)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -75,6 +87,7 @@ Scientific references
   Kotlarski et al. (2014)  Geosci. Model Dev. 7, 1297  — EURO-CORDEX evaluation framework
   Vautard et al. (2021)  JGR-Atmos 126, e2019JD032344  — ERA5-driven CORDEX, constrained circulation
   Seneviratne et al. (2010)  Earth-Sci. Rev. 99, 125   — soil-moisture–climate coupling review
+  Whan et al. (2015)  Weather Clim. Extremes 9, 57      — soil-moisture composites for hot extremes
 
 Requires annual index NetCDF files produced by script2_extremes.py.
 """
@@ -85,13 +98,20 @@ import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from matplotlib.colorbar import ColorbarBase
+from matplotlib.ticker import FormatStrFormatter
 
 from scipy.stats import pearsonr, spearmanr, linregress
 
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+
 from utils import (
     load_field, area_mean,
-    load_country_shape,
-    START_YEAR, END_YEAR, DPI,
+    reference_mean, compute_anomalies,
+    load_country_shape, interp_display, build_mask, apply_mask,
+    style_axis,
+    START_YEAR, END_YEAR, REF_START, REF_END, DPI,
 )
 
 from utils import set_ipcc_style
@@ -189,6 +209,37 @@ CORR_COLORS = [
     "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#f7f7f7",
     "#fddbc7", "#f4a582", "#d6604d", "#b2182b",
 ]
+
+# ── composite-map configuration ───────────────────────────────────────────────
+# Symmetric anomaly contour levels per driver (blue = below, red = above the
+# all-summers mean).  Adjust after first visual inspection if needed.
+DRIVER_LEVELS = {
+    "PSL":  [-6,   -4,   -2,  -1,  -0.5, 0,  0.5,  1,   2,   4,   6],   # hPa
+    "SHF":  [-30,  -20,  -10,  -5,  -2,  0,   2,    5,  10,  20,  30],   # W m⁻²
+    "LHF":  [-30,  -20,  -10,  -5,  -2,  0,   2,    5,  10,  20,  30],   # W m⁻²
+    "CLT":  [-15,  -10,   -7,  -5,  -2,  0,   2,    5,   7,  10,  15],   # %
+    "WIND": [ -2,   -1,  -0.5,-0.25,-0.1, 0,  0.1, 0.25, 0.5, 1,   2],  # m s⁻¹
+    "CAPE": [-300, -200, -100, -50, -20,  0,  20,   50, 100, 200, 300],  # J kg⁻¹
+    "CIN":  [ -40,  -30,  -20, -10,  -5,  0,   5,   10,  20,  30,  40],  # J kg⁻¹
+}
+
+# Blue-white-red diverging palette for the composite maps
+DIV_COLORS = [
+    "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#f7f7f7",
+    "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f",
+]
+
+MAP_EXTENT = [5.8, 15.2, 47.4, 55.1]
+PROJ       = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
+PC         = ccrs.PlateCarree()
+
+# Representative index per group for the composite figure (one strong, clean
+# index per group keeps the spatial story to two multi-panel figures instead
+# of one map per index×driver pair).
+COMPOSITE_REPRESENTATIVE = {
+    "Temperature":   ("T90p_exceedance_days", "T90p_days", "T90p"),
+    "Precipitation": ("SDII",                 "SDII",      "SDII"),
+}
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -360,6 +411,176 @@ def plot_driver_matrix(series_dict, drivers, outfile):
     plt.close(fig)
 
     return pd.DataFrame(mat, index=drivers, columns=drivers)
+
+
+# ── composite anomaly maps ─────────────────────────────────────────────────────
+def load_index_field(nc_stem, dataset_label="ICON"):
+    """Full 2-D annual index field (lat, lon, year) produced by script2."""
+    path = os.path.join(INDEX_NC_DIR, f"{nc_stem}_{dataset_label}_annual.nc")
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"Annual index file not found: {path}\nRun script2_extremes.py first.")
+    ds = xr.open_dataset(path)
+    return ds[list(ds.data_vars)[0]].sortby("lat").sortby("lon")
+
+
+def load_driver_anom(dname):
+    """Full 2-D driver anomaly field (lat, lon, year) vs 1961–1990 climatology."""
+    da = load_field(DRIVER_FILES[dname], DRIVER_VARS[dname])
+    scale = DRIVER_SCALE.get(dname, 1.0)
+    if scale != 1.0:
+        da = da * scale
+    annual = da.assign_coords(year=("time", da["time"].dt.year.values))
+    annual = annual.swap_dims({"time": "year"}).drop_vars("time")
+    annual = annual.sel(year=slice(int(START_YEAR), int(END_YEAR)))
+    clim   = reference_mean(annual, REF_START, REF_END)
+    return compute_anomalies(annual, clim)
+
+
+def top_tercile_years(index_field):
+    """Years in the upper tercile (~top third) of the Germany-average index."""
+    s = area_mean(index_field)
+    df = pd.DataFrame({"year": s["year"].values.astype(int),
+                       "value": s.values}).dropna()
+    n_top = max(1, len(df) // 3)
+    return df.nlargest(n_top, "value")["year"].values.astype(int)
+
+
+def composite_high_vs_rest(driver_anom, high_years, all_years):
+    """Composite = mean over high-index summers − mean over all other summers."""
+    low_years = np.setdiff1d(all_years, high_years)
+    mh = driver_anom.sel(year=high_years).mean("year", skipna=True)
+    ml = driver_anom.sel(year=low_years ).mean("year", skipna=True)
+    return mh - ml
+
+
+def _interp_colors_local(palette, n):
+    from matplotlib.colors import to_rgba
+    rgba = np.array([to_rgba(c) for c in palette])
+    xs = np.linspace(0, 1, len(palette)); xn = np.linspace(0, 1, n)
+    return [tuple(r) for r in np.column_stack(
+        [np.interp(xn, xs, rgba[:, i]) for i in range(4)])]
+
+
+def _draw_composite_panel(ax, da, gdf, geom, levels, fmt, title, tag=None):
+    """Draw one composite-anomaly panel into an existing cartopy axes."""
+    cmap = mcolors.ListedColormap(_interp_colors_local(DIV_COLORS, len(levels) - 1))
+    norm = mcolors.BoundaryNorm(levels, cmap.N)
+    cmap.set_under(DIV_COLORS[0]); cmap.set_over(DIV_COLORS[-1])
+
+    ax.set_extent(MAP_EXTENT, crs=PC)
+    ax.set_facecolor("#d6e8f2")
+    ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
+    ax.add_feature(cfeature.BORDERS.with_scale("10m"),
+                   linewidth=0.3, edgecolor="0.45", zorder=2)
+
+    fine = interp_display(da)
+    mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
+    arr  = apply_mask(fine.values, mask)
+    ax.contourf(fine["lon"].values, fine["lat"].values, arr,
+                levels=levels, cmap=cmap, norm=norm,
+                transform=PC, extend="both", antialiased=True, zorder=3)
+    ax.add_geometries(gdf.geometry, PC, facecolor="none",
+                      edgecolor="black", linewidth=0.55, zorder=6)
+
+    if tag:
+        ax.text(0.03, 0.97, tag, transform=ax.transAxes, ha="left", va="top",
+                fontsize=8, fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.75))
+    ax.set_title(title, fontsize=8.5, fontweight="bold", pad=3)
+    style_axis(ax)
+
+    de_mask = build_mask(da["lon"].values, da["lat"].values, geom)
+    if de_mask.any():
+        mean_v = float(np.nanmean(da.values[de_mask]))
+        sign = "+" if mean_v >= 0 else ""
+        ax.text(0.03, 0.03, f"DE: {sign}{fmt % mean_v}",
+                transform=ax.transAxes, ha="left", va="bottom", fontsize=6.5,
+                color="#222222",
+                bbox=dict(boxstyle="round,pad=0.15", fc="white",
+                          ec="#aaaaaa", alpha=0.88, lw=0.4))
+    return cmap, norm
+
+
+def plot_driver_panel_figure(composites, gdf, geom, outfile, suptitle):
+    """
+    One multi-panel composite figure — one panel per driver — showing the
+    driver-anomaly field composited over the upper-tercile summers of the
+    representative index.  Grid adapts to the number of drivers.
+    """
+    from matplotlib.gridspec import GridSpec
+
+    driver_names = list(composites.keys())
+    n = len(driver_names)
+    ncols = 2 if n <= 4 else 3
+    nrows = int(np.ceil(n / ncols))
+
+    fig = plt.figure(figsize=(3.5 * ncols + 0.6, 3.7 * nrows))
+    fig.patch.set_facecolor("white")
+    if suptitle:
+        fig.suptitle(suptitle, fontsize=10, y=1.00)
+
+    gs = GridSpec(nrows, ncols * 2, width_ratios=([1, 0.06] * ncols),
+                  left=0.02, right=0.96, top=0.93, bottom=0.04,
+                  hspace=0.16, wspace=0.0)
+
+    tags = list("abcdefgh")
+    for k, dname in enumerate(driver_names):
+        row = k // ncols
+        col = (k % ncols) * 2
+        ax  = fig.add_subplot(gs[row, col], projection=PROJ)
+        da  = composites[dname]
+        lvls = DRIVER_LEVELS[dname]
+        cmap, norm = _draw_composite_panel(
+            ax, da, gdf, geom, lvls, "%.1f",
+            title=DRIVER_LONG[dname], tag=f"({tags[k]})")
+
+        cax = ax.inset_axes([1.015, 0.0, 0.06, 1.0])
+        cb  = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
+                           ticks=[lvls[0], 0, lvls[-1]],
+                           orientation="vertical", extend="neither")
+        cb.ax.tick_params(labelsize=5, pad=1)
+        cb.ax.yaxis.set_major_formatter(FormatStrFormatter("%.1f"))
+        cb.outline.set_linewidth(0.4)
+        cb.set_label(DRIVER_UNITS[dname], fontsize=5.5, labelpad=2)
+
+    fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+
+
+def run_composite_group(group_name, drivers, driver_anoms, all_years,
+                        gdf, geom):
+    """Build the single composite panel figure for one group's representative index."""
+    display_name, nc_stem, label = COMPOSITE_REPRESENTATIVE[group_name]
+    try:
+        index_field = load_index_field(nc_stem, "ICON")
+    except FileNotFoundError as e:
+        print(f"  [{group_name}] composite skipped — {e}")
+        return
+
+    high_years = top_tercile_years(index_field)
+    print(f"  [{group_name}] {label}: upper-tercile years "
+          f"({len(high_years)}) → composite")
+
+    composites = {}
+    for dname in drivers:
+        if dname not in driver_anoms:
+            continue
+        anom = driver_anoms[dname]
+        anom_years = anom["year"].values.astype(int)
+        common = np.intersect1d(high_years, anom_years).astype(int)
+        if len(common) < 3:
+            print(f"    {dname}: <3 overlapping high years — skipping panel.")
+            continue
+        composites[dname] = composite_high_vs_rest(anom, common, anom_years)
+
+    if len(composites) >= 2:
+        plot_driver_panel_figure(
+            composites, gdf, geom,
+            outfile=os.path.join(FIGDIR, f"composite_{group_name.lower()}.png"),
+            suptitle=(f"{group_name} drivers — composite anomalies during "
+                      f"upper-tercile {label} summers (ICON-CLM, JJA 1950–2022)"))
+        print(f"  [{group_name}] composite figure written.")
 
 
 # ── heatmap figure ─────────────────────────────────────────────────────────────
@@ -594,12 +815,29 @@ if __name__ == "__main__":
     pd.DataFrame(long_rows).to_csv(
         os.path.join(TABDIR, "all_indices_driver_correlations.csv"), index=False)
 
+    # ── 4. Composite anomaly maps (one figure per group, representative index) ─
+    print("\nGenerating composite anomaly maps ...")
+    driver_anoms = {}
+    for dname in avail_drivers:
+        try:
+            driver_anoms[dname] = load_driver_anom(dname)
+        except Exception as e:
+            print(f"  ERROR loading anomaly field for {dname}: {e}")
+
+    all_years = np.arange(int(START_YEAR), int(END_YEAR) + 1)
+    run_composite_group("Temperature",   temp_drivers,   driver_anoms,
+                        all_years, gdf, geom)
+    run_composite_group("Precipitation", precip_drivers, driver_anoms,
+                        all_years, gdf, geom)
+
     print("\n" + "=" * 60)
     print("Script 3 complete.")
     print(f"  Driver overview  → {FIGDIR}/driver_overview_timeseries.png")
     print(f"  Driver matrix    → {FIGDIR}/driver_correlation_matrix.png")
     print(f"  Temp heatmaps    → {FIGDIR}/heatmap_temperature_[pearson|spearman].png")
     print(f"  Precip heatmaps  → {FIGDIR}/heatmap_precipitation_[pearson|spearman].png")
+    print(f"  Composite maps   → {FIGDIR}/composite_temperature.png")
+    print(f"                     {FIGDIR}/composite_precipitation.png")
     print(f"  Bar charts       → {FIGDIR}/<index>_driver_correlations_bar.png")
     print(f"  Tables           → {TABDIR}/all_indices_driver_correlations.csv")
     print(f"                     {TABDIR}/correlation_matrix_<group>_[pearson|spearman].csv")
