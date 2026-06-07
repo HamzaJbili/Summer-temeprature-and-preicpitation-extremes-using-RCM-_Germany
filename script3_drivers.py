@@ -12,14 +12,17 @@ Loikith et al. 2015; Whan et al. 2015):
        Precipitation SDII, CDD, SPI  ×  PSL, LHF, CLT, CAPE, CIN (3×5)
 
   2. COMPOSITE ANOMALY MAPS — show WHERE in Germany the driver signal
-     sits during the most extreme summers.  Upper-tercile years of EACH
-     index are selected; the anomaly field of each relevant driver is
-     composited and shown as a single multi-panel map figure per index
-     (NOT one map per pair).
-       Temperature   one 4-panel figure per index → 3 figures (T90p, HWN, HWD)
-       Precipitation one 5-panel figure per index → 3 figures (SDII, CDD, SPI)
+     sits during the most extreme summers.  Upper-tercile years of a
+     representative index per group are selected; the anomaly field of
+     each relevant driver is composited and shown as a single multi-panel
+     map figure per group (NOT one map per pair).
+       Temperature   top-T90p years → 4-panel figure (PSL, SHF, LHF, CLT)
+       Precipitation top-SPI years  → 5-panel figure (PSL, LHF, CLT, CAPE, CIN)
+     Representative choice rationale:
+       T90p: highest correlations with all temperature drivers (SHF r=+0.79)
+       SPI:  highest correlations with all precipitation drivers (CLT r=+0.86)
 
-Output: 8 figures + 1 CSV. Nothing else.
+Output: 4 figures + 1 CSV. Nothing else.
 
 Interpretation note
 ~~~~~~~~~~~~~~~~~~~~
@@ -89,6 +92,15 @@ PRECIP_INDICES = [
 
 TEMP_DRIVERS   = ["PSL", "SHF", "LHF", "CLT"]
 PRECIP_DRIVERS = ["PSL", "LHF", "CLT", "CAPE", "CIN"]
+
+# Representative index per group for composite maps.
+# Chosen as the index with the strongest overall driver correlations:
+#   T90p: SHF r=+0.79, CLT r=-0.71, PSL r=+0.43 (all p<0.01)
+#   SPI:  CLT r=+0.86, PSL r=-0.67, LHF r=+0.55 (all p<0.01)
+COMPOSITE_REP = {
+    "Temperature":   ("T90p_exceedance_days", "T90p_days", "T90p"),
+    "Precipitation": ("SPI",                  "SPI",       "SPI"),
+}
 
 # ── driver file config ─────────────────────────────────────────────────────────
 _SUFFIX = "DE-0.25_JJA_1950-2022.nc"
@@ -375,43 +387,43 @@ def plot_composite_figure(composites, gdf, geom, outfile, suptitle):
     print(f"  Saved: {outfile}")
 
 
-def run_composite_group(group_name, indices, drivers, gdf, geom):
-    """One composite figure per index — all relevant drivers in each figure."""
-    for _display, nc_stem, label in indices:
+def run_composite_group(group_name, drivers, gdf, geom):
+    """One grouped composite figure per group, using the representative index."""
+    display_name, nc_stem, label = COMPOSITE_REP[group_name]
+    try:
+        index_field = load_index_field(nc_stem, "ICON")
+    except FileNotFoundError as e:
+        print(f"  [{group_name}] composite skipped — {e}")
+        return
+
+    all_years  = index_field["year"].values.astype(int)
+    high_years = top_tercile_years(index_field)
+    print(f"  [{group_name}] {label}: top-tercile years ({len(high_years)}): "
+          f"{sorted(high_years)}")
+
+    composites = {}
+    for dname in drivers:
         try:
-            index_field = load_index_field(nc_stem, "ICON")
-        except FileNotFoundError as e:
-            print(f"  [{group_name}/{label}] composite skipped — {e}")
+            anom = load_driver_anom_field(dname)
+        except Exception as e:
+            print(f"    {dname}: could not load — {e}")
             continue
-
-        all_years  = index_field["year"].values.astype(int)
-        high_years = top_tercile_years(index_field)
-        print(f"  [{group_name}] {label}: top-tercile years ({len(high_years)}): "
-              f"{sorted(high_years)}")
-
-        composites = {}
-        for dname in drivers:
-            try:
-                anom = load_driver_anom_field(dname)
-            except Exception as e:
-                print(f"    {dname}: could not load — {e}")
-                continue
-            anom_years = anom["year"].values.astype(int)
-            common     = np.intersect1d(high_years, anom_years).astype(int)
-            if len(common) < 3:
-                print(f"    {dname}: <3 overlapping years — skipping.")
-                continue
-            composites[dname] = composite_anomaly(anom, common, anom_years)
-
-        if len(composites) < 2:
-            print(f"  [{group_name}/{label}] not enough drivers — skipping composite figure.")
+        anom_years = anom["year"].values.astype(int)
+        common     = np.intersect1d(high_years, anom_years).astype(int)
+        if len(common) < 3:
+            print(f"    {dname}: <3 overlapping years — skipping.")
             continue
+        composites[dname] = composite_anomaly(anom, common, anom_years)
 
-        plot_composite_figure(
-            composites, gdf, geom,
-            outfile=os.path.join(FIGDIR, f"composite_{label.lower()}.png"),
-            suptitle=(f"Driver anomalies during upper-tercile {label} summers  "
-                      f"·  ICON-CLM  ·  JJA 1950–2022"))
+    if len(composites) < 2:
+        print(f"  [{group_name}] not enough drivers — skipping composite figure.")
+        return
+
+    plot_composite_figure(
+        composites, gdf, geom,
+        outfile=os.path.join(FIGDIR, f"composite_{group_name.lower()}.png"),
+        suptitle=(f"Driver anomalies during upper-tercile {label} summers  "
+                  f"·  ICON-CLM  ·  JJA 1950–2022"))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -453,14 +465,14 @@ if __name__ == "__main__":
 
     # ── Part 2: composite anomaly maps ────────────────────────────────────────
     print("\n[2/2] Composite anomaly maps")
-    run_composite_group("Temperature",   TEMP_INDICES,   temp_drv,   gdf, geom)
-    run_composite_group("Precipitation", PRECIP_INDICES, precip_drv, gdf, geom)
+    run_composite_group("Temperature",   temp_drv,   gdf, geom)
+    run_composite_group("Precipitation", precip_drv, gdf, geom)
 
     print("\n" + "=" * 56)
     print("Done. Output:")
     print(f"  {FIGDIR}/heatmap_temperature.png")
     print(f"  {FIGDIR}/heatmap_precipitation.png")
-    for _, _, lbl in TEMP_INDICES + PRECIP_INDICES:
-        print(f"  {FIGDIR}/composite_{lbl.lower()}.png")
+    print(f"  {FIGDIR}/composite_temperature.png")
+    print(f"  {FIGDIR}/composite_precipitation.png")
     print(f"  {TABDIR}/driver_correlations.csv")
     print("=" * 56)
