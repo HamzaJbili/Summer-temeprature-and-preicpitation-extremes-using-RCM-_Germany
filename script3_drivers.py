@@ -90,8 +90,39 @@ PRECIP_INDICES = [
     ("SPI",  "SPI",  "SPI"),
 ]
 
-TEMP_DRIVERS   = ["PSL", "SHF", "LHF", "CLT"]
-PRECIP_DRIVERS = ["PSL", "LHF", "CLT", "CAPE", "CIN"]
+# Driver groups — physically motivated (see inline references below)
+# Temperature: large-scale dynamics + land-surface energy partition + radiation
+#   PSL : anticyclonic blocking → subsidence → warming (Feudale & Shukla 2011,
+#           Tellus A 63:702; Black et al. 2004, GRL 31:L18211)
+#   SHF : soil moisture–temperature feedback; dry soil → ↑SHF → ↑Tmax
+#           (Seneviratne et al. 2010, Earth-Sci. Rev. 99:125;
+#            Fischer et al. 2007, J. Climate 20:5081)
+#   LHF : companion to SHF in surface energy balance partitioning
+#           (Seneviratne et al. 2010; Hirschi et al. 2011, Nat. Geosci. 4:17)
+#   CLT : reduced cloud cover → ↑shortwave at surface → ↑Tmax
+#           (Eastman & Warren 2013, J. Climate 26:6881)
+#   WIND: anticyclonic blocking → calm winds → reduced turbulent mixing
+#           → boundary-layer heat accumulation
+#           (Miralles et al. 2014, Nat. Geosci. 7:345;
+#            Perkins 2015, Clim. Res. 64:141)
+# Precipitation: large-scale dynamics + moisture flux + convective instability
+#   PSL : anticyclonic blocking suppresses frontal precipitation
+#           (Feudale & Shukla 2011; Ionita et al. 2021,
+#            Front. Climate 3:688991)
+#   LHF : evapotranspiration recycles moisture → ↑precipitation
+#           (Findell & Eltahir 2003, J. Hydromet. 4:552;
+#            Mueller & Seneviratne 2012, PNAS 109:12398)
+#   CLT : proxy for cloud fraction and precipitation frequency
+#           (Trenberth et al. 2003, Bull. AMS 84:1205)
+#   CAPE: convective instability → deep convection → intense precipitation
+#           (Lepore et al. 2015, GRL 42:2535)
+#   CIN : inhibition threshold for convection initiation
+#           (Lepore et al. 2015; Myoung & Nielsen-Gammon 2010,
+#            J. Climate 23:3657)
+#   WIND: low-level moisture advection and frontal dynamics
+#           (Pfahl & Wernli 2012, J. Climate 25:7174)
+TEMP_DRIVERS   = ["PSL", "SHF", "LHF", "CLT", "WIND"]
+PRECIP_DRIVERS = ["PSL", "LHF", "CLT", "CAPE", "CIN", "WIND"]
 
 # Representative index per group for composite maps.
 # Chosen as the index with the strongest overall driver correlations:
@@ -105,33 +136,38 @@ COMPOSITE_REP = {
 # ── driver file config ─────────────────────────────────────────────────────────
 _SUFFIX = "DE-0.25_JJA_1950-2022.nc"
 DRIVER_FILES = {
-    "PSL":  f"psl_{_SUFFIX}",   "SHF": f"hfss_{_SUFFIX}",
-    "LHF":  f"hfls_{_SUFFIX}",  "CLT": f"clt_{_SUFFIX}",
-    "CAPE": f"cape_{_SUFFIX}",  "CIN": f"cin_{_SUFFIX}",
+    "PSL":  f"psl_{_SUFFIX}",      "SHF":  f"hfss_{_SUFFIX}",
+    "LHF":  f"hfls_{_SUFFIX}",     "CLT":  f"clt_{_SUFFIX}",
+    "CAPE": f"cape_{_SUFFIX}",     "CIN":  f"cin_{_SUFFIX}",
+    "WIND": f"sfcWind_{_SUFFIX}",
 }
 DRIVER_VARS = {
-    "PSL": "psl",  "SHF": "hfss", "LHF": "hfls",
-    "CLT": "clt",  "CAPE": "cape", "CIN": "cin",
+    "PSL": "psl",   "SHF": "hfss",  "LHF": "hfls",
+    "CLT": "clt",   "CAPE": "cape", "CIN": "cin",
+    "WIND": "sfcWind",
 }
 DRIVER_SCALE = {"PSL": 0.01}   # Pa → hPa
 DRIVER_LONG = {
     "PSL":  "Sea-level pressure",      "SHF":  "Sensible heat flux",
     "LHF":  "Latent heat flux",        "CLT":  "Total cloud cover",
     "CAPE": "Convective available PE", "CIN":  "Convective inhibition",
+    "WIND": "Near-surface wind speed",
 }
 DRIVER_UNITS = {
     "PSL":  "hPa",            "SHF":  "W m$^{-2}$",
     "LHF":  "W m$^{-2}$",    "CLT":  "%",
     "CAPE": "J kg$^{-1}$",   "CIN":  "J kg$^{-1}$",
+    "WIND": "m s$^{-1}$",
 }
 # Symmetric anomaly contour levels per driver
 DRIVER_LEVELS = {
-    "PSL":  [-6,  -4,  -2,  -1, -0.5, 0, 0.5,  1,   2,   4,   6],
-    "SHF":  [-30, -20, -10,  -5,  -2, 0,  2,   5,  10,  20,  30],
-    "LHF":  [-30, -20, -10,  -5,  -2, 0,  2,   5,  10,  20,  30],
-    "CLT":  [-15, -10,  -7,  -5,  -2, 0,  2,   5,   7,  10,  15],
-    "CAPE": [-300,-200,-100, -50, -20, 0, 20,  50, 100, 200, 300],
-    "CIN":  [-40, -30, -20, -10,  -5, 0,  5,  10,  20,  30,  40],
+    "PSL":  [-6,   -4,   -2,   -1,  -0.5,  0,  0.5,   1,    2,    4,    6],
+    "SHF":  [-30,  -20,  -10,   -5,   -2,  0,   2,    5,   10,   20,   30],
+    "LHF":  [-30,  -20,  -10,   -5,   -2,  0,   2,    5,   10,   20,   30],
+    "CLT":  [-15,  -10,   -7,   -5,   -2,  0,   2,    5,    7,   10,   15],
+    "CAPE": [-300, -200, -100,  -50,  -20,  0,  20,   50,  100,  200,  300],
+    "CIN":  [-40,  -30,  -20,  -10,   -5,  0,   5,   10,   20,   30,   40],
+    "WIND": [ -4,   -3,   -2,   -1, -0.5,  0, 0.5,   1,    2,    3,    4],
 }
 
 # Palettes
