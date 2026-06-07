@@ -97,10 +97,11 @@ PRECIP_INDICES = [
 #            Black et al. 2004, GRL 31:L18211)
 #   SHF : dry soil → reduced evapotranspiration → more energy into SHF → ↑Tmax
 #           soil moisture–temperature feedback
-#           (Seneviratne et al. 2010, Earth-Sci. Rev. 99:125)
-#   LHF : companion flux to SHF in the surface energy balance;
-#           reduced LHF co-occurs with ↑SHF under dry conditions
-#           (Seneviratne et al. 2010, Earth-Sci. Rev. 99:125)
+#           (Seneviratne et al. 2010, Earth-Sci. Rev. 99:125;
+#            Stegehuis et al. 2013, Clim. Dyn. 41:455 — correlates SHF and LHF
+#            with European summer temperatures in RCM simulations)
+#   LHF : companion flux to SHF; reduced LHF co-occurs with ↑SHF under dry soil
+#           (Seneviratne et al. 2010; Stegehuis et al. 2013, Clim. Dyn. 41:455)
 #   CLT : reduced cloud cover → ↑net shortwave at surface → ↑Tmax
 #           (Eastman & Warren 2013, J. Climate 26:6881)
 #   WIND: anticyclonic blocking → calm winds → reduced turbulent mixing
