@@ -92,14 +92,16 @@ PRECIP_INDICES = [
 
 # Driver groups — physically motivated (see inline references below)
 # Temperature: large-scale dynamics + land-surface energy partition + radiation
-#   PSL : anticyclonic blocking → subsidence → warming (Feudale & Shukla 2011,
-#           Tellus A 63:702; Black et al. 2004, GRL 31:L18211)
-#   SHF : soil moisture–temperature feedback; dry soil → ↑SHF → ↑Tmax
-#           (Seneviratne et al. 2010, Earth-Sci. Rev. 99:125;
-#            Fischer et al. 2007, J. Climate 20:5081)
-#   LHF : companion to SHF in surface energy balance partitioning
-#           (Seneviratne et al. 2010; Hirschi et al. 2011, Nat. Geosci. 4:17)
-#   CLT : reduced cloud cover → ↑shortwave at surface → ↑Tmax
+#   PSL : anticyclonic blocking → subsidence → warming
+#           (Feudale & Shukla 2011, Tellus A 63:702;
+#            Black et al. 2004, GRL 31:L18211)
+#   SHF : dry soil → reduced evapotranspiration → more energy into SHF → ↑Tmax
+#           soil moisture–temperature feedback
+#           (Seneviratne et al. 2010, Earth-Sci. Rev. 99:125)
+#   LHF : companion flux to SHF in the surface energy balance;
+#           reduced LHF co-occurs with ↑SHF under dry conditions
+#           (Seneviratne et al. 2010, Earth-Sci. Rev. 99:125)
+#   CLT : reduced cloud cover → ↑net shortwave at surface → ↑Tmax
 #           (Eastman & Warren 2013, J. Climate 26:6881)
 #   WIND: anticyclonic blocking → calm winds → reduced turbulent mixing
 #           → boundary-layer heat accumulation
@@ -107,18 +109,15 @@ PRECIP_INDICES = [
 #            Perkins 2015, Clim. Res. 64:141)
 # Precipitation: large-scale dynamics + moisture flux + convective instability
 #   PSL : anticyclonic blocking suppresses frontal precipitation
-#           (Feudale & Shukla 2011; Ionita et al. 2021,
-#            Front. Climate 3:688991)
+#           (Ionita et al. 2021, Front. Climate 3:688991)
 #   LHF : evapotranspiration recycles moisture → ↑precipitation
-#           (Findell & Eltahir 2003, J. Hydromet. 4:552;
-#            Mueller & Seneviratne 2012, PNAS 109:12398)
-#   CLT : proxy for cloud fraction and precipitation frequency
+#           (Mueller & Seneviratne 2012, PNAS 109:12398)
+#   CLT : cloud fraction proxy; cloudy conditions associated with precipitation
 #           (Trenberth et al. 2003, Bull. AMS 84:1205)
 #   CAPE: convective instability → deep convection → intense precipitation
 #           (Lepore et al. 2015, GRL 42:2535)
-#   CIN : inhibition threshold for convection initiation
-#           (Lepore et al. 2015; Myoung & Nielsen-Gammon 2010,
-#            J. Climate 23:3657)
+#   CIN : convective inhibition threshold; suppresses CAPE-driven convection
+#           (Myoung & Nielsen-Gammon 2010, J. Climate 23:3657)
 #   WIND: low-level moisture advection and frontal dynamics
 #           (Pfahl & Wernli 2012, J. Climate 25:7174)
 TEMP_DRIVERS   = ["PSL", "SHF", "LHF", "CLT", "WIND"]
