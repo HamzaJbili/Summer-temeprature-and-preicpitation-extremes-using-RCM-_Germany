@@ -274,7 +274,7 @@ def plot_heatmap(r_mat, p_mat, row_labels, col_labels, outfile):
                 continue
             c = "white" if abs(r) > 0.55 else "#1a1a1a"
             ax.text(j, i,
-                    f"r {r:+.2f}{_stars(p_mat[i, j])}",
+                    f"r = {r:.2f}{_stars(p_mat[i, j])}",
                     ha="center", va="center", fontsize=8.5, color=c)
     ax.set_xticks(range(n_cols)); ax.set_yticks(range(n_rows))
     ax.set_xticklabels(col_labels, fontsize=10)
