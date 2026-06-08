@@ -260,21 +260,26 @@ def correlate(s_idx, s_drv):
                 spearman_r=float(sr), spearman_p=float(sp))
 
 
-def plot_heatmap(r_mat, p_mat, row_labels, col_labels, outfile, title):
+def plot_heatmap(r_mat, p_mat, rS_mat, pS_mat, row_labels, col_labels, outfile):
     n_rows, n_cols = r_mat.shape
     cmap = mcolors.LinearSegmentedColormap.from_list("corr", CORR_COLORS)
     norm = mcolors.Normalize(-1.0, 1.0)
-    fig, ax = plt.subplots(figsize=(0.95 * n_cols + 2.2, 0.75 * n_rows + 1.8))
+    fig, ax = plt.subplots(figsize=(1.1 * n_cols + 2.2, 1.0 * n_rows + 1.8))
     fig.patch.set_facecolor("white")
     im = ax.imshow(r_mat, cmap=cmap, norm=norm, aspect="auto")
     for i in range(n_rows):
         for j in range(n_cols):
-            r = r_mat[i, j]
+            r   = r_mat[i, j];  rho = rS_mat[i, j]
             if not np.isfinite(r):
                 continue
             c = "white" if abs(r) > 0.55 else "#1a1a1a"
-            ax.text(j, i, f"{r:+.2f}{_stars(p_mat[i, j])}",
-                    ha="center", va="center", fontsize=9, color=c)
+            ax.text(j, i - 0.18,
+                    f"r {r:+.2f}{_stars(p_mat[i, j])}",
+                    ha="center", va="center", fontsize=8, color=c)
+            ax.text(j, i + 0.22,
+                    f"ρ {rho:+.2f}{_stars(pS_mat[i, j])}",
+                    ha="center", va="center", fontsize=7, color=c,
+                    fontstyle="italic")
     ax.set_xticks(range(n_cols)); ax.set_yticks(range(n_rows))
     ax.set_xticklabels(col_labels, fontsize=10)
     ax.set_yticklabels(row_labels, fontsize=10, fontweight="bold")
@@ -282,9 +287,12 @@ def plot_heatmap(r_mat, p_mat, row_labels, col_labels, outfile, title):
     ax.set_yticks(np.arange(-0.5, n_rows, 1), minor=True)
     ax.grid(which="minor", color="white", linewidth=1.5)
     ax.tick_params(which="minor", length=0)
-    for sp in ax.spines.values():
-        sp.set_visible(False)
-    ax.set_title(title + "\n(* p<0.05,  ** p<0.01)", fontsize=10, pad=8)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.text(0.5, -0.10,
+            "r = Pearson  ·  ρ = Spearman  ·  * p<0.05  ** p<0.01",
+            transform=ax.transAxes, ha="center", va="top",
+            fontsize=7.5, color="0.4")
     cb = fig.colorbar(im, ax=ax, fraction=0.045, pad=0.03)
     cb.set_label("Pearson r", fontsize=9)
     cb.ax.tick_params(labelsize=8)
@@ -295,7 +303,7 @@ def plot_heatmap(r_mat, p_mat, row_labels, col_labels, outfile, title):
 
 
 def run_correlation_group(group_name, indices, drivers, driver_series, rows_out):
-    avail, rP, pP = [], [], []
+    avail, rP, pP, rS, pS = [], [], [], [], []
     for display_name, nc_stem, label in indices:
         try:
             s = load_index_series(nc_stem, "ICON")
@@ -303,10 +311,11 @@ def run_correlation_group(group_name, indices, drivers, driver_series, rows_out)
             print(f"  Skipping {display_name}: {e}")
             continue
         avail.append(label)
-        rowP, rowPp = [], []
+        rowP, rowPp, rowS, rowSp = [], [], [], []
         for d in drivers:
             res = correlate(s, driver_series[d])
-            rowP.append(res["pearson_r"]); rowPp.append(res["pearson_p"])
+            rowP.append(res["pearson_r"]);  rowPp.append(res["pearson_p"])
+            rowS.append(res["spearman_r"]); rowSp.append(res["spearman_p"])
             rows_out.append({
                 "group": group_name, "index": label, "driver": d,
                 "n": res["n"],
@@ -315,18 +324,20 @@ def run_correlation_group(group_name, indices, drivers, driver_series, rows_out)
                 "spearman_r": round(res["spearman_r"], 3) if np.isfinite(res["spearman_r"]) else np.nan,
                 "spearman_p": round(res["spearman_p"], 4) if np.isfinite(res["spearman_p"]) else np.nan,
             })
-            print(f"  {label:5s} × {d:5s}: r={res['pearson_r']:+.2f} (p={res['pearson_p']:.3f})")
+            print(f"  {label:5s} × {d:5s}: "
+                  f"r={res['pearson_r']:+.2f} (p={res['pearson_p']:.3f})  "
+                  f"ρ={res['spearman_r']:+.2f} (p={res['spearman_p']:.3f})")
         rP.append(rowP); pP.append(rowPp)
+        rS.append(rowS); pS.append(rowSp)
 
     if not avail:
         print(f"  [{group_name}] no index files found — skipping heatmap.")
         return
 
     plot_heatmap(
-        np.array(rP), np.array(pP), avail, drivers,
-        outfile=os.path.join(FIGDIR, f"heatmap_{group_name.lower()}.png"),
-        title=f"{group_name} extremes — driver correlation (Pearson r)\n"
-              "ICON-CLM  ·  Germany average  ·  JJA 1950–2022")
+        np.array(rP), np.array(pP), np.array(rS), np.array(pS),
+        avail, drivers,
+        outfile=os.path.join(FIGDIR, f"heatmap_{group_name.lower()}.png"))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -393,7 +404,7 @@ def _draw_panel(ax, da, gdf, geom, levels, title, tag=None):
     return cmap, norm
 
 
-def plot_composite_figure(composites, gdf, geom, outfile, suptitle):
+def plot_composite_figure(composites, gdf, geom, outfile):
     """One grouped multi-panel composite figure — one panel per driver."""
     from matplotlib.gridspec import GridSpec
     names = list(composites.keys())
@@ -403,10 +414,9 @@ def plot_composite_figure(composites, gdf, geom, outfile, suptitle):
 
     fig = plt.figure(figsize=(3.6 * ncols + 0.4, 3.8 * nrows + 0.5))
     fig.patch.set_facecolor("white")
-    fig.suptitle(suptitle, fontsize=10, y=1.01)
 
     gs = GridSpec(nrows, ncols * 2, width_ratios=([1, 0.06] * ncols),
-                  left=0.02, right=0.97, top=0.93, bottom=0.04,
+                  left=0.02, right=0.97, top=0.97, bottom=0.04,
                   hspace=0.18, wspace=0.0)
 
     for k, dname in enumerate(names):
@@ -468,9 +478,7 @@ def run_composite_group(group_name, drivers, gdf, geom):
 
     plot_composite_figure(
         composites, gdf, geom,
-        outfile=os.path.join(FIGDIR, f"composite_{group_name.lower()}.png"),
-        suptitle=(f"Driver anomalies during upper-tercile {label} summers  "
-                  f"·  ICON-CLM  ·  JJA 1950–2022"))
+        outfile=os.path.join(FIGDIR, f"composite_{group_name.lower()}.png"))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
