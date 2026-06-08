@@ -52,7 +52,7 @@ import xarray as xr
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.colorbar import ColorbarBase
-from matplotlib.ticker import FormatStrFormatter
+from matplotlib.ticker import FormatStrFormatter, FuncFormatter
 from scipy.stats import pearsonr, spearmanr
 
 import cartopy.crs as ccrs
@@ -424,13 +424,13 @@ def plot_composite_figure(composites, gdf, geom, outfile):
             tag=f"({chr(97 + k)})")
 
         cax = ax.inset_axes([1.015, 0.0, 0.06, 1.0])
-        _lv = DRIVER_LEVELS[dname]; _n = len(_lv)
+        _lv = DRIVER_LEVELS[dname]
         cb  = ColorbarBase(cax, cmap=cmap, norm=norm,
                            boundaries=_lv,
-                           ticks=[_lv[0], _lv[_n // 4], 0, _lv[3 * _n // 4], _lv[-1]],
+                           ticks=_lv,
                            orientation="vertical", extend="neither")
-        cb.ax.tick_params(labelsize=5, pad=1)
-        cb.ax.yaxis.set_major_formatter(FormatStrFormatter("%.1f"))
+        cb.ax.tick_params(labelsize=4.5, pad=1)
+        cb.ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:g}"))
         cb.outline.set_linewidth(0.4)
         cb.set_label(f"Anomaly [{DRIVER_UNITS[dname]}]",
                      fontsize=5.5, labelpad=2)
