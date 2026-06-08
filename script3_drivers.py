@@ -90,6 +90,17 @@ PRECIP_INDICES = [
     ("SPI",  "SPI",  "SPI"),
 ]
 
+# Composite anomaly map methodology — standard approach in heatwave driver studies.
+# Composite maps of SHF, LHF, cloud cover, and pressure anomalies during
+# upper-tercile extreme summers follow:
+#   Wu et al. (2023), npj Clim. Atmos. Sci. 6:36
+#     DOI 10.1038/s41612-023-00365-8
+#     — explicitly composites SHF and LHF anomalies during heatwave events
+#       globally, alongside cloud fraction, humidity and radiation anomalies.
+#   Trenberth & Fasullo (2012), J. Geophys. Res. Atmos. 117:D17103
+#     DOI 10.1029/2012JD018020
+#     — anomaly maps of multiple variables (pressure, heat fluxes, precipitation)
+#       during the 2010 Russian heat wave.
 # Driver groups — physically motivated (see inline references below)
 # Temperature: large-scale dynamics + land-surface energy partition + radiation
 #   PSL : anticyclonic blocking → subsidence → warming
