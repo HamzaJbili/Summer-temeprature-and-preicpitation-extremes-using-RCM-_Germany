@@ -260,7 +260,7 @@ def correlate(s_idx, s_drv):
                 spearman_r=float(sr), spearman_p=float(sp))
 
 
-def plot_heatmap(r_mat, p_mat, rS_mat, pS_mat, row_labels, col_labels, outfile):
+def plot_heatmap(r_mat, p_mat, row_labels, col_labels, outfile):
     n_rows, n_cols = r_mat.shape
     cmap = mcolors.LinearSegmentedColormap.from_list("corr", CORR_COLORS)
     norm = mcolors.Normalize(-1.0, 1.0)
@@ -269,17 +269,13 @@ def plot_heatmap(r_mat, p_mat, rS_mat, pS_mat, row_labels, col_labels, outfile):
     im = ax.imshow(r_mat, cmap=cmap, norm=norm, aspect="auto")
     for i in range(n_rows):
         for j in range(n_cols):
-            r   = r_mat[i, j];  rho = rS_mat[i, j]
+            r = r_mat[i, j]
             if not np.isfinite(r):
                 continue
             c = "white" if abs(r) > 0.55 else "#1a1a1a"
-            ax.text(j, i - 0.18,
+            ax.text(j, i,
                     f"r {r:+.2f}{_stars(p_mat[i, j])}",
-                    ha="center", va="center", fontsize=8, color=c)
-            ax.text(j, i + 0.22,
-                    f"ρ {rho:+.2f}{_stars(pS_mat[i, j])}",
-                    ha="center", va="center", fontsize=7, color=c,
-                    fontstyle="italic")
+                    ha="center", va="center", fontsize=8.5, color=c)
     ax.set_xticks(range(n_cols)); ax.set_yticks(range(n_rows))
     ax.set_xticklabels(col_labels, fontsize=10)
     ax.set_yticklabels(row_labels, fontsize=10, fontweight="bold")
@@ -290,7 +286,7 @@ def plot_heatmap(r_mat, p_mat, rS_mat, pS_mat, row_labels, col_labels, outfile):
     for spine in ax.spines.values():
         spine.set_visible(False)
     ax.text(0.5, -0.10,
-            "r = Pearson  ·  ρ = Spearman  ·  * p<0.05  ** p<0.01",
+            "* p<0.05  ** p<0.01",
             transform=ax.transAxes, ha="center", va="top",
             fontsize=7.5, color="0.4")
     cb = fig.colorbar(im, ax=ax, fraction=0.045, pad=0.03)
@@ -335,7 +331,7 @@ def run_correlation_group(group_name, indices, drivers, driver_series, rows_out)
         return
 
     plot_heatmap(
-        np.array(rP), np.array(pP), np.array(rS), np.array(pS),
+        np.array(rP), np.array(pP),
         avail, drivers,
         outfile=os.path.join(FIGDIR, f"heatmap_{group_name.lower()}.png"))
 
