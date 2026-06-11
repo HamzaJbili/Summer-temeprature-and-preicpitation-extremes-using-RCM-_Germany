@@ -1171,7 +1171,7 @@ def plot_index_summary_figure(
     fig = plt.figure(figsize=(15.5, 10.2))
     fig.patch.set_facecolor("white")
     if suptitle:
-        fig.suptitle(suptitle, fontsize=12, fontweight="bold", y=1.00)
+        fig.suptitle(suptitle, fontsize=12, fontweight="normal", y=1.00)
 
     gs = GridSpec(2, 5, width_ratios=[1, 0.08, 1, 0.08, 1],
                   left=0.02, right=0.93, top=0.95, bottom=0.03,
@@ -2133,7 +2133,8 @@ def taylor_diagram(obs_dict, mod_dict, outfile,
     fig, ax = plt.subplots(figsize=(7.5, 6.5))
     fig.patch.set_facecolor("white")
     ax.set_aspect("equal")
-    fig.suptitle(title, fontsize=9, fontweight="bold", y=1.00)
+    if title:
+        fig.suptitle(title, fontsize=9, fontweight="normal", y=1.00)
 
     # ── Standard deviation arcs (dashed, from origin) ─────────────────────────
     std_ticks = np.arange(0.5, max_std + 0.01, 0.5)
@@ -2309,8 +2310,8 @@ def plot_trend_heatmap(heatmap_rows, outfile,
     for j in range(3):
         ax.axvline(j - 0.5, color="white", lw=1.5, zorder=3)
     ax.set_title(
-        f"{title}\n(* p<0.05, ** p<0.01 — Mann-Kendall, Yue-Wang correction)",
-        fontsize=9, fontweight="bold", pad=28)
+        "(* p<0.05, ** p<0.01 — Mann-Kendall, Yue-Wang correction)",
+        fontsize=9, fontweight="normal", pad=28)
     ax.tick_params(axis="both", which="both", length=0)
     for sp in ax.spines.values():
         sp.set_visible(False)

@@ -1050,7 +1050,7 @@ if __name__ == "__main__":
         obs_dict=ts_obs_store,
         mod_dict=ts_mod_store,
         outfile=os.path.join(FIGDIR, "taylor_diagram.png"),
-        title="Model Skill — ICON-CLM vs E-OBS\n(Germany average, JJA 1950–2022)",
+        title=None,
     )
 
     # ── Trend heatmap: all-index trend summary ────────────────────────────────
@@ -1058,7 +1058,7 @@ if __name__ == "__main__":
     plot_trend_heatmap(
         heatmap_rows=heatmap_rows,
         outfile=os.path.join(FIGDIR, "trend_heatmap.png"),
-        title="Theil-Sen Trends per Decade — All JJA Extreme Indices",
+        title=None,
     )
 
     # ── Save statistics table ─────────────────────────────────────────────────
