@@ -1905,7 +1905,8 @@ def plot_germany_series(
     if simple:
         fig, ax = plt.subplots(figsize=(10, 4.5))
         fig.patch.set_facecolor("white")
-        fig.suptitle(title, fontsize=10, fontweight="bold", y=1.01)
+        if title:
+            fig.suptitle(title, fontsize=10, fontweight="normal", y=1.01)
 
         ax.plot(years, obs_vals, color=OBS_COL, lw=1.0, alpha=0.65,
                 label="E-OBS", zorder=3)
@@ -1964,7 +1965,8 @@ def plot_germany_series(
         gridspec_kw={"hspace": 0.05, "height_ratios": [1.45, 1]},
     )
     fig.patch.set_facecolor("white")
-    fig.suptitle(title, fontsize=11, fontweight="bold", y=0.98)
+    if title:
+        fig.suptitle(title, fontsize=11, fontweight="normal", y=0.98)
 
     for vals, col, lbl in [
         (obs_vals, OBS_COL, "E-OBS"),

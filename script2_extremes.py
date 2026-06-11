@@ -565,7 +565,7 @@ def process_index(
         obs_series, model_series,
         obs_anom,   model_anom,
         ylabel      = unit,
-        title       = f"{long_name}  —  Germany average, JJA 1950–2022",
+        title       = None,
         outfile     = os.path.join(FIGDIR, f"{name}_germany_series.png"),
         obs_stats   = obs_stats,
         model_stats = model_stats,
