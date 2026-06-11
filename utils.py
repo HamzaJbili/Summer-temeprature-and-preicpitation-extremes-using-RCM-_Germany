@@ -509,7 +509,7 @@ def plot_climatology_maps(obs_clim, mod_clim, gdf, geom, outfile,
         bias_colors = _interp_colors(_DEFAULT_BIAS_COLORS, len(bias_levels) - 1)
 
     if bias_label is None:
-        bias_label = f"Diff (ICON − E-OBS) [{cbar_label}]"
+        bias_label = cbar_label
 
     bias = (mod_clim - obs_clim).astype(np.float32)
 
@@ -546,7 +546,7 @@ def plot_climatology_maps(obs_clim, mod_clim, gdf, geom, outfile,
         dict(ax=fig.add_subplot(gs[0, 4], projection=PROJ),
              da=bias,     cmap=cmap_bias, norm=norm_bias,
              lvls=bias_levels, lbl=bias_label,  fmt=bias_tick_fmt, tag="(c)",
-             title="Diff (ICON − E-OBS)"),
+             title="Diff"),
     ]
 
     for p in panels:
@@ -571,7 +571,7 @@ def plot_climatology_maps(obs_clim, mod_clim, gdf, geom, outfile,
         ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
                 ha="left", va="top", fontsize=9, fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
-        ax.set_title(p["title"], fontsize=9.5, fontweight="bold", pad=4)
+        ax.set_title(p["title"], fontsize=9.5, fontweight="normal", pad=4)
         style_axis(ax)
 
         # Germany-mean annotation
@@ -714,7 +714,7 @@ def plot_grouped_trend_maps(
             dict(ax=fig.add_subplot(gs[row, 4], projection=PROJ),
                  da=diff, cmap=cmap_diff, norm=norm_diff,
                  lvls=diff_lvls, tag=t2,
-                 title=f"Diff (ICON−E-OBS) · {idx['row_label']}", pval=None,
+                 title=f"Diff · {idx['row_label']}", pval=None,
                  stipple=False, fmt=idx["tick_fmt"], lbl=idx["trend_unit"]),
         ]
 
@@ -756,7 +756,7 @@ def plot_grouped_trend_maps(
             ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
                     ha="left", va="top", fontsize=9, fontweight="bold",
                     bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
-            ax.set_title(p["title"], fontsize=9, fontweight="bold", pad=4)
+            ax.set_title(p["title"], fontsize=9, fontweight="normal", pad=4)
             style_axis(ax)
 
             # Germany-mean annotation
@@ -866,7 +866,7 @@ def plot_grouped_clim_maps(
             dict(ax=fig.add_subplot(gs[row, 4], projection=PROJ),
                  da=diff, cmap=cmap_diff, norm=norm_diff,
                  lvls=idx["clim_diff_levels"], tag=t2,
-                 title=f"Diff (ICON−E-OBS) · {idx['row_label']}",
+                 title=f"Diff · {idx['row_label']}",
                  fmt=diff_fmt, lbl=clim_lbl),
         ]
 
@@ -891,7 +891,7 @@ def plot_grouped_clim_maps(
             ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
                     ha="left", va="top", fontsize=9, fontweight="bold",
                     bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
-            ax.set_title(p["title"], fontsize=9, fontweight="bold", pad=4)
+            ax.set_title(p["title"], fontsize=9, fontweight="normal", pad=4)
             style_axis(ax)
 
             # Germany-mean annotation
@@ -1007,7 +1007,7 @@ def plot_three_panel_trend_maps(
              fmt=tick_fmt, lbl=trend_unit),
         dict(ax=fig.add_subplot(gs[0, 4], projection=PROJ),
              da=diff, cmap=cmap_diff, norm=norm_diff,
-             lvls=diff_lvls, tag="(c)", title="Diff (ICON−E-OBS)",
+             lvls=diff_lvls, tag="(c)", title="Diff",
              pval=None, stipple=False,
              fmt=tick_fmt, lbl=trend_unit),
     ]
@@ -1050,7 +1050,7 @@ def plot_three_panel_trend_maps(
         ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
                 ha="left", va="top", fontsize=9, fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
-        ax.set_title(p["title"], fontsize=9, fontweight="bold", pad=4)
+        ax.set_title(p["title"], fontsize=9, fontweight="normal", pad=4)
         style_axis(ax)
 
         # Germany-mean annotation
@@ -1189,7 +1189,7 @@ def plot_index_summary_figure(
              fmt=clim_tick_fmt, lbl=clim_label),
         dict(ax=fig.add_subplot(gs[0, 4], projection=PROJ),
              da=clim_diff, cmap=cmap_cd, norm=norm_cd, lvls=clim_diff_levels,
-             tag="(c)", title="Diff (ICON − E-OBS)", pval=None, stipple=False,
+             tag="(c)", title="Diff", pval=None, stipple=False,
              fmt="%.2f", lbl=clim_label),
         # ── Row 1: trend ─────────────────────────────────────────────────
         dict(ax=fig.add_subplot(gs[1, 0], projection=PROJ),
@@ -1202,7 +1202,7 @@ def plot_index_summary_figure(
              fmt=trend_tick_fmt, lbl=trend_unit),
         dict(ax=fig.add_subplot(gs[1, 4], projection=PROJ),
              da=trend_diff, cmap=cmap_dt, norm=norm_dt, lvls=dt_lvls,
-             tag="(f)", title="Diff (ICON − E-OBS)", pval=None, stipple=False,
+             tag="(f)", title="Diff", pval=None, stipple=False,
              fmt=trend_tick_fmt, lbl=trend_unit),
     ]
 
@@ -1244,7 +1244,7 @@ def plot_index_summary_figure(
         ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
                 ha="left", va="top", fontsize=9, fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
-        ax.set_title(p["title"], fontsize=9.5, fontweight="bold", pad=4)
+        ax.set_title(p["title"], fontsize=9.5, fontweight="normal", pad=4)
         style_axis(ax)
 
         # Germany-mean annotation
@@ -1576,9 +1576,9 @@ def plot_paired_trend_maps(
         bias_lvls, _, bias_cmap, bias_norm = _auto_scale_palette(
             diff.values, levels_base, colors_base, force_diverging=True)
         panels.append(
-            dict(da=diff, pval=None, title="Bias (ICON − E-OBS)", tag="(c)",
+            dict(da=diff, pval=None, title="Diff", tag="(c)",
                  cmap=bias_cmap, norm=bias_norm, lvls=bias_lvls,
-                 stipple=False, cbar_lbl=f"Bias [{cbar_label}]", fmt=tick_fmt))
+                 stipple=False, cbar_lbl=cbar_label, fmt=tick_fmt))
 
     n_panels = len(panels)
 
@@ -1645,7 +1645,7 @@ def plot_paired_trend_maps(
                 ha="left", va="top", fontsize=11, fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.22", fc="white",
                           ec="#888888", alpha=0.92, lw=0.6))
-        ax.set_title(p["title"], fontsize=11, fontweight="bold", pad=6)
+        ax.set_title(p["title"], fontsize=11, fontweight="normal", pad=6)
 
         mean_v = float(np.nanmean(da.values[de_mask_c]))
         sign   = "+" if mean_v >= 0 else ""
@@ -1679,7 +1679,7 @@ def plot_obs_bias_maps(
     outfile,
     obs_levels, obs_colors,
     cbar_label,
-    title_obs="E-OBS", title_diff="Diff (ICON − E-OBS)",
+    title_obs="E-OBS", title_diff="Diff",
     tick_fmt="%.2f",
     suptitle=None,
     obs_sequential=True,
@@ -1847,7 +1847,7 @@ def plot_obs_bias_maps(
                 ha="left", va="top", fontsize=11, fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.22", fc="white",
                           ec="#888888", alpha=0.92, lw=0.6))
-        ax.set_title(p["title"], fontsize=11, fontweight="bold", pad=6)
+        ax.set_title(p["title"], fontsize=11, fontweight="normal", pad=6)
 
         mean_v = float(np.nanmean(da.values[de_mask_c]))
         sign   = "+" if mean_v >= 0 else ""

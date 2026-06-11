@@ -545,7 +545,7 @@ def process_index(
         outfile=os.path.join(FIGDIR, f"{name}_trend_map.png"),
         obs_levels=trend_levels, obs_colors=colors,
         trend_unit=trend_unit, tick_fmt=tick_fmt,
-        suptitle=f"{long_name} — Theil-Sen Trend 1950–2022",
+        suptitle=None,
         obs_sequential=obs_sequential,
     )
 
@@ -713,7 +713,7 @@ if __name__ == "__main__":
         outfile  = os.path.join(FIGDIR, "T90p_exceedance_days_spatial_mean.png"),
         levels   = T90P_DIST_LEVELS, colors=T90P_DIST_COLORS,
         cbar_label = "T90p hot-day frequency [days/summer]", tick_fmt="%.0f",
-        suptitle = "T90p — Mean hot-day frequency 1950–2022",
+        suptitle = None,
         bias_levels=T90P_DIST_BIAS_LEVELS, bias_colors=BIAS_DIV_COLORS,
         bias_tick_fmt="%.1f",
     )
@@ -726,7 +726,7 @@ if __name__ == "__main__":
         outfile  = os.path.join(FIGDIR, "T90p_threshold_spatial.png"),
         levels   = T90P_THR_LEVELS, colors=T90P_THR_COLORS,
         cbar_label = "90th-pct Tmean threshold [deg C]", tick_fmt="%.1f",
-        suptitle = "T90p — 90th-pct Tmean threshold 1961–1990",
+        suptitle = None,
         bias_levels=T90P_THR_BIAS_LEVELS, bias_colors=BIAS_DIV_COLORS,
         bias_tick_fmt="%.2f",
     )
@@ -793,7 +793,7 @@ if __name__ == "__main__":
         ],
         gdf=gdf, geom=geom,
         outfile=os.path.join(FIGDIR, "HW_combined_clim_map.png"),
-        suptitle="Heatwave Climatology 1950–2022 — HWN and HWD",
+        suptitle=None,
     )
 
     # ── Combined heatwave trend figure (HWN + HWD, 2 rows × 3 cols) ──────────
@@ -811,7 +811,7 @@ if __name__ == "__main__":
         ],
         gdf=gdf, geom=geom,
         outfile=os.path.join(FIGDIR, "HW_combined_trend_map.png"),
-        suptitle="Heatwave Trends 1950–2022 — HWN and HWD",
+        suptitle=None,
     )
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -849,7 +849,7 @@ if __name__ == "__main__":
         outfile  = os.path.join(FIGDIR, "SDII_spatial_mean.png"),
         levels   = SDII_CLIM_LEVELS, colors=SDII_CLIM_COLORS,
         cbar_label = "SDII mean [mm/wet-day]", tick_fmt="%.1f",
-        suptitle = "SDII — Mean daily intensity 1950–2022",
+        suptitle = None,
         bias_levels=SDII_BIAS_LEVELS, bias_colors=BIAS_DIV_COLORS,
         bias_tick_fmt="%.2f",
     )
@@ -887,7 +887,7 @@ if __name__ == "__main__":
         outfile  = os.path.join(FIGDIR, "CDD_spatial_mean.png"),
         levels   = CDD_CLIM_LEVELS, colors=CDD_CLIM_COLORS,
         cbar_label = "CDD mean [days/summer]", tick_fmt="%.0f",
-        suptitle = "CDD — Mean climatology 1950–2022",
+        suptitle = None,
         bias_levels=CDD_BIAS_LEVELS, bias_colors=BIAS_DIV_COLORS,
         bias_tick_fmt="%.1f",
     )
@@ -971,7 +971,7 @@ if __name__ == "__main__":
         ],
         gdf=gdf, geom=geom,
         outfile=os.path.join(FIGDIR, "annex_A_clim_map.png"),
-        suptitle="Peak Intensity Climatology 1950–2022 — Rx1day and Rx5day",
+        suptitle=None,
     )
 
     print("Annex: Group A (Rx1day + Rx5day) — trend map …")
@@ -988,7 +988,7 @@ if __name__ == "__main__":
         ],
         gdf=gdf, geom=geom,
         outfile=os.path.join(FIGDIR, "annex_A_trend_map.png"),
-        suptitle="Peak Intensity Trends 1950–2022 — Rx1day and Rx5day",
+        suptitle=None,
     )
 
     # ── Group B: frequency + persistence (R10mm + R20mm + CWD) ───────────────
@@ -1016,7 +1016,7 @@ if __name__ == "__main__":
         ],
         gdf=gdf, geom=geom,
         outfile=os.path.join(FIGDIR, "annex_B_clim_map.png"),
-        suptitle="Frequency & Persistence Climatology 1950–2022 — R10mm, R20mm, CWD",
+        suptitle=None,
     )
 
     print("Annex: Group B (R10mm + R20mm + CWD) — trend map …")
@@ -1037,7 +1037,7 @@ if __name__ == "__main__":
         ],
         gdf=gdf, geom=geom,
         outfile=os.path.join(FIGDIR, "annex_B_trend_map.png"),
-        suptitle="Frequency & Persistence Trends 1950–2022 — R10mm, R20mm, CWD",
+        suptitle=None,
     )
 
     # ══════════════════════════════════════════════════════════════════════════
