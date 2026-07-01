@@ -571,7 +571,7 @@ def plot_climatology_maps(obs_clim, mod_clim, gdf, geom, outfile,
         ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
                 ha="left", va="top", fontsize=9, fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
-        ax.set_title(p["title"], fontsize=9.5, fontweight="normal", pad=4)
+        ax.set_title(p["title"], fontsize=10.5, fontweight="normal", pad=4)
         style_axis(ax)
 
         # Germany-mean annotation
@@ -581,7 +581,7 @@ def plot_climatology_maps(obs_clim, mod_clim, gdf, geom, outfile,
             sign   = "+" if mean_v >= 0 else ""
             ax.text(0.03, 0.03, f"DE: {sign}{p['fmt'] % mean_v}",
                     transform=ax.transAxes, ha="left", va="bottom",
-                    fontsize=7.5, color="#222222",
+                    fontsize=8.5, color="#222222",
                     bbox=dict(boxstyle="round,pad=0.20", fc="white",
                               ec="#aaaaaa", alpha=0.92, lw=0.5))
 
@@ -590,10 +590,10 @@ def plot_climatology_maps(obs_clim, mod_clim, gdf, geom, outfile,
         cb = ColorbarBase(cax, cmap=p["cmap"], norm=p["norm"],
                           boundaries=p["lvls"], ticks=p["lvls"],
                           orientation="vertical", extend="neither")
-        cb.ax.tick_params(labelsize=6, pad=2, length=3, width=0.5, direction="out")
+        cb.ax.tick_params(labelsize=8.5, pad=2, length=3, width=0.5, direction="out")
         cb.ax.yaxis.set_major_formatter(FormatStrFormatter(p["fmt"]))
         cb.outline.set_linewidth(0.5)
-        cb.set_label(p["lbl"], fontsize=8, labelpad=4)
+        cb.set_label(p["lbl"], fontsize=9.5, labelpad=4)
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
@@ -747,7 +747,7 @@ def plot_grouped_trend_maps(
                     sig_fr = int((de_c & (p["pval"].values < 0.05)).sum()) / n_de * 100
                     ax.text(0.97, 0.03, f"Sig.: {sig_fr:.0f}%",
                             transform=ax.transAxes, ha="right", va="bottom",
-                            fontsize=7.5, color="#222222",
+                            fontsize=8.5, color="#222222",
                             bbox=dict(boxstyle="round,pad=0.20", fc="white",
                                       ec="#aaaaaa", alpha=0.92, lw=0.5))
 
@@ -756,7 +756,7 @@ def plot_grouped_trend_maps(
             ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
                     ha="left", va="top", fontsize=9, fontweight="bold",
                     bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
-            ax.set_title(p["title"], fontsize=9, fontweight="normal", pad=4)
+            ax.set_title(p["title"], fontsize=10.5, fontweight="normal", pad=4)
             style_axis(ax)
 
             # Germany-mean annotation
@@ -766,7 +766,7 @@ def plot_grouped_trend_maps(
                 sign   = "+" if mean_v >= 0 else ""
                 ax.text(0.03, 0.03, f"DE: {sign}{p['fmt'] % mean_v}",
                         transform=ax.transAxes, ha="left", va="bottom",
-                        fontsize=7.5, color="#222222",
+                        fontsize=8.5, color="#222222",
                         bbox=dict(boxstyle="round,pad=0.20", fc="white",
                                   ec="#aaaaaa", alpha=0.92, lw=0.5))
 
@@ -774,10 +774,10 @@ def plot_grouped_trend_maps(
             cb = ColorbarBase(cax, cmap=p["cmap"], norm=p["norm"],
                               boundaries=p["lvls"], ticks=p["lvls"],
                               orientation="vertical", extend="neither")
-            cb.ax.tick_params(labelsize=6, pad=2, length=3, width=0.5)
+            cb.ax.tick_params(labelsize=8.5, pad=2, length=3, width=0.5)
             cb.ax.yaxis.set_major_formatter(FormatStrFormatter(p["fmt"]))
             cb.outline.set_linewidth(0.5)
-            cb.set_label(p["lbl"], fontsize=7, labelpad=4)
+            cb.set_label(p["lbl"], fontsize=9.5, labelpad=4)
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
@@ -891,7 +891,7 @@ def plot_grouped_clim_maps(
             ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
                     ha="left", va="top", fontsize=9, fontweight="bold",
                     bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
-            ax.set_title(p["title"], fontsize=9, fontweight="normal", pad=4)
+            ax.set_title(p["title"], fontsize=10.5, fontweight="normal", pad=4)
             style_axis(ax)
 
             # Germany-mean annotation
@@ -901,7 +901,7 @@ def plot_grouped_clim_maps(
                 sign   = "+" if mean_v >= 0 else ""
                 ax.text(0.03, 0.03, f"DE: {sign}{p['fmt'] % mean_v}",
                         transform=ax.transAxes, ha="left", va="bottom",
-                        fontsize=7.5, color="#222222",
+                        fontsize=8.5, color="#222222",
                         bbox=dict(boxstyle="round,pad=0.20", fc="white",
                                   ec="#aaaaaa", alpha=0.92, lw=0.5))
 
@@ -909,10 +909,10 @@ def plot_grouped_clim_maps(
             cb = ColorbarBase(cax, cmap=p["cmap"], norm=p["norm"],
                               boundaries=p["lvls"], ticks=p["lvls"],
                               orientation="vertical", extend="neither")
-            cb.ax.tick_params(labelsize=6, pad=2, length=3, width=0.5)
+            cb.ax.tick_params(labelsize=8.5, pad=2, length=3, width=0.5)
             cb.ax.yaxis.set_major_formatter(FormatStrFormatter(p["fmt"]))
             cb.outline.set_linewidth(0.5)
-            cb.set_label(p["lbl"], fontsize=7, labelpad=4)
+            cb.set_label(p["lbl"], fontsize=9.5, labelpad=4)
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
@@ -1041,7 +1041,7 @@ def plot_three_panel_trend_maps(
                 sig_fr = int((de_c & (p["pval"].values < 0.05)).sum()) / n_de * 100
                 ax.text(0.97, 0.03, f"Sig.: {sig_fr:.0f}%",
                         transform=ax.transAxes, ha="right", va="bottom",
-                        fontsize=7.5, color="#222222",
+                        fontsize=8.5, color="#222222",
                         bbox=dict(boxstyle="round,pad=0.20", fc="white",
                                   ec="#aaaaaa", alpha=0.92, lw=0.5))
 
@@ -1050,7 +1050,7 @@ def plot_three_panel_trend_maps(
         ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
                 ha="left", va="top", fontsize=9, fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
-        ax.set_title(p["title"], fontsize=9, fontweight="normal", pad=4)
+        ax.set_title(p["title"], fontsize=10.5, fontweight="normal", pad=4)
         style_axis(ax)
 
         # Germany-mean annotation
@@ -1060,7 +1060,7 @@ def plot_three_panel_trend_maps(
             sign   = "+" if mean_v >= 0 else ""
             ax.text(0.03, 0.03, f"DE: {sign}{p['fmt'] % mean_v}",
                     transform=ax.transAxes, ha="left", va="bottom",
-                    fontsize=7.5, color="#222222",
+                    fontsize=8.5, color="#222222",
                     bbox=dict(boxstyle="round,pad=0.20", fc="white",
                               ec="#aaaaaa", alpha=0.92, lw=0.5))
 
@@ -1235,7 +1235,7 @@ def plot_index_summary_figure(
                 sig_fr = int((de_c & (p["pval"].values < 0.05)).sum()) / n_de * 100
                 ax.text(0.97, 0.03, f"Sig.: {sig_fr:.0f}%",
                         transform=ax.transAxes, ha="right", va="bottom",
-                        fontsize=7.5, color="#222222",
+                        fontsize=8.5, color="#222222",
                         bbox=dict(boxstyle="round,pad=0.20", fc="white",
                                   ec="#aaaaaa", alpha=0.92, lw=0.5))
 
@@ -1244,7 +1244,7 @@ def plot_index_summary_figure(
         ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
                 ha="left", va="top", fontsize=9, fontweight="bold",
                 bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
-        ax.set_title(p["title"], fontsize=9.5, fontweight="normal", pad=4)
+        ax.set_title(p["title"], fontsize=10.5, fontweight="normal", pad=4)
         style_axis(ax)
 
         # Germany-mean annotation
@@ -1254,7 +1254,7 @@ def plot_index_summary_figure(
             sign   = "+" if mean_v >= 0 else ""
             ax.text(0.03, 0.03, f"DE: {sign}{p['fmt'] % mean_v}",
                     transform=ax.transAxes, ha="left", va="bottom",
-                    fontsize=7.5, color="#222222",
+                    fontsize=8.5, color="#222222",
                     bbox=dict(boxstyle="round,pad=0.20", fc="white",
                               ec="#aaaaaa", alpha=0.92, lw=0.5))
 
@@ -1263,10 +1263,10 @@ def plot_index_summary_figure(
         cb  = ColorbarBase(cax, cmap=p["cmap"], norm=p["norm"],
                            boundaries=p["lvls"], ticks=_smart_ticks(p["lvls"]),
                            orientation="vertical", extend="neither")
-        cb.ax.tick_params(labelsize=6, pad=2, length=3, width=0.5, direction="out")
+        cb.ax.tick_params(labelsize=8.5, pad=2, length=3, width=0.5, direction="out")
         cb.ax.yaxis.set_major_formatter(FormatStrFormatter(p["fmt"]))
         cb.outline.set_linewidth(0.5)
-        cb.set_label(p["lbl"], fontsize=7.5, labelpad=4)
+        cb.set_label(p["lbl"], fontsize=9.5, labelpad=4)
 
     # Row labels on left margin
     for row_i, row_lbl in enumerate(["Mean (1950–2022)", "Trend / decade"]):
@@ -1519,8 +1519,8 @@ def style_axis(ax):
     )
     gl.top_labels   = False
     gl.right_labels = False
-    gl.xlabel_style = {"size": 7}
-    gl.ylabel_style = {"size": 7}
+    gl.xlabel_style = {"size": 9}
+    gl.ylabel_style = {"size": 9}
     for sp in ax.spines.values():
         sp.set_linewidth(0.65)
 
@@ -1637,7 +1637,7 @@ def plot_paired_trend_maps(
             sig_frac = stip_mask.sum() / n_de * 100 if n_de > 0 else 0.0
             ax.text(0.97, 0.03, f"Sig. area: {sig_frac:.0f}%",
                     transform=ax.transAxes, ha="right", va="bottom",
-                    fontsize=7.5, color="#222222",
+                    fontsize=8.5, color="#222222",
                     bbox=dict(boxstyle="round,pad=0.20", fc="white",
                               ec="#aaaaaa", alpha=0.92, lw=0.5))
 
@@ -1651,7 +1651,7 @@ def plot_paired_trend_maps(
         sign   = "+" if mean_v >= 0 else ""
         ax.text(0.03, 0.03, f"Mean: {sign}{mean_v:.3f}",
                 transform=ax.transAxes, ha="left", va="bottom",
-                fontsize=7.5, color="#222222",
+                fontsize=8.5, color="#222222",
                 bbox=dict(boxstyle="round,pad=0.20", fc="white",
                           ec="#aaaaaa", alpha=0.92, lw=0.5))
 
@@ -1662,10 +1662,10 @@ def plot_paired_trend_maps(
         cb  = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
                            ticks=_smart_ticks(lvls), orientation="vertical",
                            extend="neither")
-        cb.ax.tick_params(labelsize=6, pad=2, length=3, width=0.5, direction="out")
+        cb.ax.tick_params(labelsize=8.5, pad=2, length=3, width=0.5, direction="out")
         cb.ax.yaxis.set_major_formatter(FormatStrFormatter(p["fmt"]))
         cb.outline.set_linewidth(0.5)
-        cb.set_label(p["cbar_lbl"], fontsize=8, labelpad=4, fontweight="normal")
+        cb.set_label(p["cbar_lbl"], fontsize=9.5, labelpad=4, fontweight="normal")
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
@@ -1839,7 +1839,7 @@ def plot_obs_bias_maps(
             sig_frac = stip_mask.sum() / n_de * 100 if n_de > 0 else 0.0
             ax.text(0.97, 0.03, f"Sig. area: {sig_frac:.0f}%",
                     transform=ax.transAxes, ha="right", va="bottom",
-                    fontsize=7.5, color="#222222",
+                    fontsize=8.5, color="#222222",
                     bbox=dict(boxstyle="round,pad=0.20", fc="white",
                               ec="#aaaaaa", alpha=0.92, lw=0.5))
 
@@ -1853,7 +1853,7 @@ def plot_obs_bias_maps(
         sign   = "+" if mean_v >= 0 else ""
         ax.text(0.03, 0.03, f"Mean: {sign}{mean_v:.3f}",
                 transform=ax.transAxes, ha="left", va="bottom",
-                fontsize=7.5, color="#222222",
+                fontsize=8.5, color="#222222",
                 bbox=dict(boxstyle="round,pad=0.20", fc="white",
                           ec="#aaaaaa", alpha=0.92, lw=0.5))
 
@@ -1864,10 +1864,10 @@ def plot_obs_bias_maps(
 
         cb = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
                           ticks=_smart_ticks(lvls), orientation="vertical", extend="neither")
-        cb.ax.tick_params(labelsize=6, pad=2, length=3, width=0.5, direction="out")
+        cb.ax.tick_params(labelsize=8.5, pad=2, length=3, width=0.5, direction="out")
         cb.ax.yaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
         cb.outline.set_linewidth(0.5)
-        cb.set_label(p["cbar_lbl"], fontsize=8, labelpad=4, fontweight="normal")
+        cb.set_label(p["cbar_lbl"], fontsize=9.5, labelpad=4, fontweight="normal")
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
