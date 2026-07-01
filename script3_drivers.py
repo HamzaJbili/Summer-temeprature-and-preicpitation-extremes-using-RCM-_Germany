@@ -383,10 +383,10 @@ def _draw_panel(ax, da, gdf, geom, levels, title, tag=None):
 
     if tag:
         ax.text(0.03, 0.97, tag, transform=ax.transAxes,
-                ha="left", va="top", fontsize=8, fontweight="bold",
-                bbox=dict(boxstyle="round,pad=0.15", fc="white",
+                ha="left", va="top", fontsize=9, fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.18", fc="white",
                           ec="none", alpha=0.75))
-    ax.set_title(title, fontsize=8.5, fontweight="bold", pad=3)
+    ax.set_title(title, fontsize=10.5, fontweight="normal", pad=4)
     style_axis(ax)
 
     de_mask = build_mask(da["lon"].values, da["lat"].values, geom)
@@ -394,9 +394,9 @@ def _draw_panel(ax, da, gdf, geom, levels, title, tag=None):
         mv = float(np.nanmean(da.values[de_mask]))
         ax.text(0.03, 0.03, f"DE: {mv:+.1f}",
                 transform=ax.transAxes, ha="left", va="bottom",
-                fontsize=6.5, color="#222222",
-                bbox=dict(boxstyle="round,pad=0.15", fc="white",
-                          ec="#aaaaaa", alpha=0.88, lw=0.4))
+                fontsize=8.5, color="#222222",
+                bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                          ec="#aaaaaa", alpha=0.92, lw=0.5))
     return cmap, norm
 
 
@@ -408,12 +408,12 @@ def plot_composite_figure(composites, gdf, geom, outfile):
     ncols = 2 if n <= 4 else 3
     nrows = int(np.ceil(n / ncols))
 
-    fig = plt.figure(figsize=(3.6 * ncols + 0.4, 3.8 * nrows + 0.5))
+    fig = plt.figure(figsize=(4.4 * ncols + 0.5, 4.6 * nrows + 0.5))
     fig.patch.set_facecolor("white")
 
-    gs = GridSpec(nrows, ncols * 2, width_ratios=([1, 0.06] * ncols),
+    gs = GridSpec(nrows, ncols * 2, width_ratios=([1, 0.22] * ncols),
                   left=0.02, right=0.97, top=0.97, bottom=0.04,
-                  hspace=0.18, wspace=0.0)
+                  hspace=0.18, wspace=0.05)
 
     for k, dname in enumerate(names):
         row = k // ncols; col = (k % ncols) * 2
@@ -423,17 +423,17 @@ def plot_composite_figure(composites, gdf, geom, outfile):
             DRIVER_LEVELS[dname], DRIVER_LONG[dname],
             tag=f"({chr(97 + k)})")
 
-        cax = ax.inset_axes([1.015, 0.0, 0.06, 1.0])
+        cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
         _lv = DRIVER_LEVELS[dname]
         cb  = ColorbarBase(cax, cmap=cmap, norm=norm,
                            boundaries=_lv,
                            ticks=_lv,
                            orientation="vertical", extend="neither")
-        cb.ax.tick_params(labelsize=4.5, pad=1)
+        cb.ax.tick_params(labelsize=8.5, pad=2, length=3, width=0.5)
         cb.ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:g}"))
-        cb.outline.set_linewidth(0.4)
+        cb.outline.set_linewidth(0.5)
         cb.set_label(f"Anomaly [{DRIVER_UNITS[dname]}]",
-                     fontsize=5.5, labelpad=2)
+                     fontsize=9.5, labelpad=4)
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
