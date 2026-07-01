@@ -546,7 +546,7 @@ def plot_climatology_maps(obs_clim, mod_clim, gdf, geom, outfile,
         dict(ax=fig.add_subplot(gs[0, 4], projection=PROJ),
              da=bias,     cmap=cmap_bias, norm=norm_bias,
              lvls=bias_levels, lbl=bias_label,  fmt=bias_tick_fmt, tag="(c)",
-             title="ICON-CLM − E-OBS"),
+             title="Diff (ICON − E-OBS)"),
     ]
 
     for p in panels:
@@ -715,7 +715,7 @@ def plot_grouped_trend_maps(
             dict(ax=fig.add_subplot(gs[row, 4], projection=PROJ),
                  da=diff, cmap=cmap_diff, norm=norm_diff,
                  lvls=diff_lvls, tag=t2,
-                 title="ICON-CLM − E-OBS", pval=None,
+                 title="Diff (ICON − E-OBS)", pval=None,
                  stipple=False, fmt=idx["tick_fmt"], lbl=idx["trend_unit"]),
         ]
 
@@ -871,7 +871,7 @@ def plot_grouped_clim_maps(
             dict(ax=fig.add_subplot(gs[row, 4], projection=PROJ),
                  da=diff, cmap=cmap_diff, norm=norm_diff,
                  lvls=idx["clim_diff_levels"], tag=t2,
-                 title="ICON-CLM − E-OBS",
+                 title="Diff (ICON − E-OBS)",
                  fmt=diff_fmt, lbl=clim_lbl),
         ]
 
@@ -1016,7 +1016,7 @@ def plot_three_panel_trend_maps(
              fmt=tick_fmt, lbl=trend_unit),
         dict(ax=fig.add_subplot(gs[0, 4], projection=PROJ),
              da=diff, cmap=cmap_diff, norm=norm_diff,
-             lvls=diff_lvls, tag="(c)", title="ICON-CLM − E-OBS",
+             lvls=diff_lvls, tag="(c)", title="Diff (ICON − E-OBS)",
              pval=None, stipple=False,
              fmt=tick_fmt, lbl=trend_unit),
     ]
@@ -1077,10 +1077,10 @@ def plot_three_panel_trend_maps(
         cb = ColorbarBase(cax, cmap=p["cmap"], norm=p["norm"],
                           boundaries=p["lvls"], ticks=p["lvls"],
                           orientation="vertical", extend="neither")
-        cb.ax.tick_params(labelsize=6, pad=2, length=3, width=0.5)
+        cb.ax.tick_params(labelsize=8.5, pad=2, length=3, width=0.5)
         cb.ax.yaxis.set_major_formatter(FormatStrFormatter(p["fmt"]))
         cb.outline.set_linewidth(0.5)
-        cb.set_label(p["lbl"], fontsize=7, labelpad=4)
+        cb.set_label(p["lbl"], fontsize=9.5, labelpad=4)
 
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
@@ -1198,7 +1198,7 @@ def plot_index_summary_figure(
              fmt=clim_tick_fmt, lbl=clim_label),
         dict(ax=fig.add_subplot(gs[0, 4], projection=PROJ),
              da=clim_diff, cmap=cmap_cd, norm=norm_cd, lvls=clim_diff_levels,
-             tag="(c)", title="ICON-CLM − E-OBS", pval=None, stipple=False,
+             tag="(c)", title="Diff (ICON − E-OBS)", pval=None, stipple=False,
              fmt="%.2f", lbl=clim_label),
         # ── Row 1: trend ─────────────────────────────────────────────────
         dict(ax=fig.add_subplot(gs[1, 0], projection=PROJ),
@@ -1211,7 +1211,7 @@ def plot_index_summary_figure(
              fmt=trend_tick_fmt, lbl=trend_unit),
         dict(ax=fig.add_subplot(gs[1, 4], projection=PROJ),
              da=trend_diff, cmap=cmap_dt, norm=norm_dt, lvls=dt_lvls,
-             tag="(f)", title="ICON-CLM − E-OBS", pval=None, stipple=False,
+             tag="(f)", title="Diff (ICON − E-OBS)", pval=None, stipple=False,
              fmt=trend_tick_fmt, lbl=trend_unit),
     ]
 
@@ -1585,7 +1585,7 @@ def plot_paired_trend_maps(
         bias_lvls, _, bias_cmap, bias_norm = _auto_scale_palette(
             diff.values, levels_base, colors_base, force_diverging=True)
         panels.append(
-            dict(da=diff, pval=None, title="ICON-CLM − E-OBS", tag="(c)",
+            dict(da=diff, pval=None, title="Diff (ICON − E-OBS)", tag="(c)",
                  cmap=bias_cmap, norm=bias_norm, lvls=bias_lvls,
                  stipple=False, cbar_lbl=cbar_label, fmt=tick_fmt))
 
@@ -1688,7 +1688,7 @@ def plot_obs_bias_maps(
     outfile,
     obs_levels, obs_colors,
     cbar_label,
-    title_obs="E-OBS", title_diff="ICON-CLM − E-OBS",
+    title_obs="E-OBS", title_diff="Diff (ICON − E-OBS)",
     tick_fmt="%.2f",
     suptitle=None,
     obs_sequential=True,
@@ -1950,12 +1950,12 @@ def plot_germany_series(
             if years[0] <= yr <= years[-1]:
                 ax.axvline(yr, color="#555555", lw=0.8, ls=":", alpha=0.70, zorder=2)
                 ax.text(yr + 0.3, ymax - (ymax - ymin) * 0.04, lbl,
-                        fontsize=6.5, color="#444444", va="top", ha="left",
+                        fontsize=8, color="#444444", va="top", ha="left",
                         rotation=90)
 
-        ax.set_xlabel("Year", fontsize=9)
-        ax.set_ylabel(ylabel, fontsize=9)
-        ax.tick_params(labelsize=8)
+        ax.set_xlabel("Year", fontsize=10.5)
+        ax.set_ylabel(ylabel, fontsize=10.5)
+        ax.tick_params(labelsize=9.5)
         ax.legend(fontsize=8, frameon=True, framealpha=0.88,
                   edgecolor="0.70", loc="upper left")
         ax.grid(True, linestyle="--", linewidth=0.35, alpha=0.55, zorder=0)
@@ -1997,11 +1997,11 @@ def plot_germany_series(
     ]
     ax1.legend(
         handles=list(ax1.get_legend_handles_labels()[0]) + custom_lines,
-        fontsize=7.5, frameon=True, framealpha=0.85, edgecolor="0.70",
+        fontsize=9, frameon=True, framealpha=0.85, edgecolor="0.70",
         loc="lower right", ncol=2,
     )
-    ax1.set_ylabel(ylabel, fontsize=9)
-    ax1.tick_params(labelsize=8)
+    ax1.set_ylabel(ylabel, fontsize=10.5)
+    ax1.tick_params(labelsize=9.5)
     ax1.grid(True, linestyle="--", linewidth=0.35, alpha=0.55, zorder=0)
     ax1.spines["top"].set_visible(False)
     ax1.spines["right"].set_visible(False)
@@ -2015,7 +2015,7 @@ def plot_germany_series(
 
     ax2.axvspan(1991, 2020, color="#f0f0f0", zorder=0)
     ax2.text(2005.5, 0, "1991–2020\nreference", ha="center", va="bottom",
-             fontsize=6.5, color="0.55", style="italic", zorder=1)
+             fontsize=8, color="0.55", style="italic", zorder=1)
     ax2.axhline(0, color="0.35", lw=0.80, zorder=1)
 
     bar_w   = 0.42
@@ -2034,11 +2034,11 @@ def plot_germany_series(
              label="E-OBS 10-yr", zorder=5, alpha=0.90)
 
     ylabel_anom = ylabel_anom or f"Anomaly [{ylabel}]"
-    ax2.set_ylabel(ylabel_anom, fontsize=9)
-    ax2.set_xlabel("Year", fontsize=9)
-    ax2.legend(fontsize=7.5, frameon=True, framealpha=0.85, edgecolor="0.70",
+    ax2.set_ylabel(ylabel_anom, fontsize=10.5)
+    ax2.set_xlabel("Year", fontsize=10.5)
+    ax2.legend(fontsize=9, frameon=True, framealpha=0.85, edgecolor="0.70",
                loc="lower left", ncol=2)
-    ax2.tick_params(labelsize=8)
+    ax2.tick_params(labelsize=9.5)
     ax2.grid(True, linestyle="--", linewidth=0.35, alpha=0.55, zorder=0)
     ax2.spines["top"].set_visible(False)
     ax2.spines["right"].set_visible(False)
@@ -2046,7 +2046,7 @@ def plot_germany_series(
     ax2.text(0.005, 0.98, "(b)", transform=ax2.transAxes,
              fontsize=10, fontweight="bold", va="top")
     ax2.text(0.79, 0.96, "grey band = 1991-2020 ref. period",
-             transform=ax2.transAxes, fontsize=6.5, color="0.55", va="top")
+             transform=ax2.transAxes, fontsize=8, color="0.55", va="top")
 
     plt.tight_layout(rect=[0, 0, 1, 0.97])
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
@@ -2152,7 +2152,7 @@ def taylor_diagram(obs_dict, mod_dict, outfile,
         y_a = r_std * np.sin(theta_q)
         ax.plot(x_a, y_a, "--", color="0.72", lw=0.6, zorder=1)
         ax.text(r_std, -0.07, f"{r_std:.1f}",
-                ha="center", va="top", fontsize=7, color="0.45")
+                ha="center", va="top", fontsize=8.5, color="0.45")
 
     # ── RMSE arcs (dotted, centred at reference point (1, 0)) ─────────────────
     rms_levels = [0.25, 0.5, 0.75, 1.0, 1.5]
@@ -2171,10 +2171,10 @@ def taylor_diagram(obs_dict, mod_dict, outfile,
         if len(right_idx):
             xi, yi = xr[right_idx[-1]], yr[right_idx[-1]]
             ax.text(xi + 0.03, yi + 0.01, f"{rms_v:.2g}",
-                    fontsize=6, color="#d73027", alpha=0.80, ha="left")
+                    fontsize=7.5, color="#d73027", alpha=0.80, ha="left")
 
     ax.text(max_std * 0.92, max_std * 0.88, "RMSE\n(norm.)",
-            fontsize=7, color="#d73027", ha="right", alpha=0.75,
+            fontsize=8.5, color="#d73027", ha="right", alpha=0.75,
             bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.7))
 
     # ── Correlation radial lines ───────────────────────────────────────────────
@@ -2185,7 +2185,7 @@ def taylor_diagram(obs_dict, mod_dict, outfile,
         lx = (max_std + 0.12) * np.cos(ang)
         ly = (max_std + 0.12) * np.sin(ang)
         ax.text(lx, ly, f"{r_corr:.2f}", ha="center", va="center",
-                fontsize=6.5, color="0.40",
+                fontsize=8, color="0.40",
                 rotation=-np.degrees(ang) + 90)
 
     ax.text((max_std + 0.30) * np.cos(np.pi / 4),
@@ -2196,7 +2196,7 @@ def taylor_diagram(obs_dict, mod_dict, outfile,
     # ── Reference (E-OBS) marker at (1, 0) ────────────────────────────────────
     ax.plot([1.0], [0.0], "*", color="0.20", ms=14, zorder=8,
             markeredgecolor="k", markeredgewidth=0.5)
-    ax.text(1.04, 0.05, "E-OBS\n(ref.)", fontsize=7.5, color="0.25",
+    ax.text(1.04, 0.05, "E-OBS\n(ref.)", fontsize=9, color="0.25",
             va="bottom")
 
     # ── Model index markers (numbered) + side legend ─────────────────────────
@@ -2212,7 +2212,7 @@ def taylor_diagram(obs_dict, mod_dict, outfile,
         col = palette[i % 10]
         ax.plot(x, y, "o", color=col, ms=12, zorder=7,
                 markeredgecolor="k", markeredgewidth=0.6)
-        ax.text(x, y, str(i + 1), fontsize=7, ha="center", va="center",
+        ax.text(x, y, str(i + 1), fontsize=8.5, ha="center", va="center",
                 color="white", fontweight="bold", zorder=8)
         short = _short_index_name(name)
         legend_handles.append(
@@ -2221,7 +2221,7 @@ def taylor_diagram(obs_dict, mod_dict, outfile,
                    label=f"{i + 1}.  {short}   (r={corr:.2f}, σ*={nstd:.2f})"))
 
     ax.legend(handles=legend_handles, loc="upper left",
-              bbox_to_anchor=(1.01, 1.0), fontsize=7.5, frameon=True,
+              bbox_to_anchor=(1.01, 1.0), fontsize=9, frameon=True,
               framealpha=0.95, edgecolor="0.7", handletextpad=0.4,
               borderpad=0.6, labelspacing=0.6, title="Index (σ* = norm. SD)",
               title_fontsize=8)
@@ -2229,13 +2229,13 @@ def taylor_diagram(obs_dict, mod_dict, outfile,
     # ── Axes formatting ────────────────────────────────────────────────────────
     ax.set_xlim(-0.08, max_std * 1.20)
     ax.set_ylim(-0.18, max_std * 1.22)
-    ax.set_xlabel("Standard Deviation (normalised)", fontsize=9, labelpad=10)
-    ax.set_ylabel("Standard Deviation (normalised)", fontsize=9)
+    ax.set_xlabel("Standard Deviation (normalised)", fontsize=10.5, labelpad=10)
+    ax.set_ylabel("Standard Deviation (normalised)", fontsize=10.5)
     ax.axhline(0, color="0.45", lw=0.7, zorder=0)
     ax.axvline(0, color="0.45", lw=0.7, zorder=0)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.tick_params(labelsize=8)
+    ax.tick_params(labelsize=9.5)
     ax.grid(False)
 
     plt.tight_layout(rect=[0, 0, 1, 0.97])
@@ -2328,7 +2328,7 @@ def plot_trend_heatmap(heatmap_rows, outfile,
     cb = fig.colorbar(im, ax=ax, orientation="vertical",
                       fraction=0.035, pad=0.03, shrink=0.80)
     cb.set_label("Row-normalised trend", fontsize=8)
-    cb.ax.tick_params(labelsize=7.5)
+    cb.ax.tick_params(labelsize=9)
 
     plt.tight_layout()
     fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
