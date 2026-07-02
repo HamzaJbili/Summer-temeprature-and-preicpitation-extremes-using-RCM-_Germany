@@ -142,7 +142,7 @@ def process_mean_index(name, annual_model, annual_obs, unit,
         obs_anom_series, model_anom_series,
         ylabel      = unit,
         ylabel_anom = f"Anomaly ({unit})",
-        title       = name.replace("_", " "),
+        title       = None,
         outfile     = os.path.join(FIGDIR, f"{name}_germany_series.png"),
     )
 
