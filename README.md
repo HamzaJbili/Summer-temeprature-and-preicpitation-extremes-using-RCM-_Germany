@@ -105,7 +105,7 @@ and energy-demand impact assessments.
 | SHF | Surface sensible heat flux | W m⁻² |
 | LHF | Surface latent heat flux | W m⁻² |
 | CLT | Total cloud cover | % |
-| WIND | 10-metre wind speed | m s⁻¹ |
+| WIND | Near-surface wind speed | m s⁻¹ |
 | CAPE | Convective Available Potential Energy | J kg⁻¹ |
 | CIN | Convective Inhibition | J kg⁻¹ |
 
@@ -163,7 +163,7 @@ These files are **not included** in this repository (data sharing restrictions).
 | `sensible_heat_flux_daily_1950_2022_0.25deg_Germany.nc` | `hfss` | Surface sensible heat flux |
 | `latent_heat_flux_daily_1950_2022_0.25deg_Germany.nc` | `hfls` | Surface latent heat flux |
 | `cloud_cover_daily_1950_2022_0.25deg_Germany.nc` | `clt` | Total cloud cover |
-| `wind_sfc_daily_1950_2022_0.25deg_Germany.nc` | `sfcWind` | 10-metre wind speed |
+| `wind_sfc_daily_1950_2022_0.25deg_Germany.nc` | `sfcWind` | Near-surface wind speed |
 | `cape_daily_1950_2022_0.25deg_Germany.nc` | `cape` | CAPE |
 | `cin_daily_1950_2022_0.25deg_Germany.nc` | `cin` | CIN |
 
