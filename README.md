@@ -101,10 +101,10 @@ and energy-demand impact assessments.
 
 | Variable | Description | Units |
 |---|---|---|
-| Z500 | Geopotential height at 500 hPa | m |
+| PSL | Sea-level pressure | hPa |
 | SHF | Surface sensible heat flux | W m⁻² |
 | LHF | Surface latent heat flux | W m⁻² |
-| SM | Soil moisture (uppermost layer) | kg m⁻² |
+| CLT | Total cloud cover | % |
 | WIND | 10-metre wind speed | m s⁻¹ |
 | CAPE | Convective Available Potential Energy | J kg⁻¹ |
 | CIN | Convective Inhibition | J kg⁻¹ |
@@ -159,10 +159,10 @@ These files are **not included** in this repository (data sharing restrictions).
 ### Driver variables (script 3)
 | File | Variable | Description |
 |---|---|---|
-| `z500_daily_1950_2022_0.25deg_Germany.nc` | `z` | Geopotential height 500 hPa |
+| `psl_daily_1950_2022_0.25deg_Germany.nc` | `psl` | Sea-level pressure |
 | `sensible_heat_flux_daily_1950_2022_0.25deg_Germany.nc` | `hfss` | Surface sensible heat flux |
 | `latent_heat_flux_daily_1950_2022_0.25deg_Germany.nc` | `hfls` | Surface latent heat flux |
-| `soil_moisture_daily_1950_2022_0.25deg_Germany.nc` | `mrso` | Soil moisture |
+| `cloud_cover_daily_1950_2022_0.25deg_Germany.nc` | `clt` | Total cloud cover |
 | `wind_sfc_daily_1950_2022_0.25deg_Germany.nc` | `sfcWind` | 10-metre wind speed |
 | `cape_daily_1950_2022_0.25deg_Germany.nc` | `cape` | CAPE |
 | `cin_daily_1950_2022_0.25deg_Germany.nc` | `cin` | CIN |
