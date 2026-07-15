@@ -546,7 +546,7 @@ def plot_climatology_maps(obs_clim, mod_clim, gdf, geom, outfile,
         dict(ax=fig.add_subplot(gs[0, 4], projection=PROJ),
              da=bias,     cmap=cmap_bias, norm=norm_bias,
              lvls=bias_levels, lbl=bias_label,  fmt=bias_tick_fmt, tag="(c)",
-             title="Diff (ICON − E-OBS)"),
+             title="Bias (ICON − E-OBS)"),
     ]
 
     for p in panels:
@@ -871,7 +871,7 @@ def plot_grouped_clim_maps(
             dict(ax=fig.add_subplot(gs[row, 4], projection=PROJ),
                  da=diff, cmap=cmap_diff, norm=norm_diff,
                  lvls=idx["clim_diff_levels"], tag=t2,
-                 title="Diff (ICON − E-OBS)",
+                 title="Bias (ICON − E-OBS)",
                  fmt=diff_fmt, lbl=clim_lbl),
         ]
 
@@ -1198,7 +1198,7 @@ def plot_index_summary_figure(
              fmt=clim_tick_fmt, lbl=clim_label),
         dict(ax=fig.add_subplot(gs[0, 4], projection=PROJ),
              da=clim_diff, cmap=cmap_cd, norm=norm_cd, lvls=clim_diff_levels,
-             tag="(c)", title="Diff (ICON − E-OBS)", pval=None, stipple=False,
+             tag="(c)", title="Bias (ICON − E-OBS)", pval=None, stipple=False,
              fmt="%.2f", lbl=clim_label),
         # ── Row 1: trend ─────────────────────────────────────────────────
         dict(ax=fig.add_subplot(gs[1, 0], projection=PROJ),
