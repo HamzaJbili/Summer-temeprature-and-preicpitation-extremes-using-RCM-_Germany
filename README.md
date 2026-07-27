@@ -169,7 +169,7 @@ These files are **not included** in this repository (data sharing restrictions).
 
 ### Germany shapefile
 ```
-/work/jbiliham/shapefile_Germany/gadm41_DEU_0.shp
+shapefile_Germany/gadm41_DEU_0.shp
 ```
 Update the `GERMANY_SHP` constant at the top of each script to match your system.
 
