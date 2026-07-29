@@ -10,7 +10,7 @@
 
 This repository contains the complete Python analysis workflow for a master's thesis assessing **summer (JJA) temperature and precipitation trends and extremes over Germany** using high-resolution regional climate modelling.
 
-The study evaluates the performance of **ICON-CLM** (~12 km) against the **E-OBS** gridded observational dataset (v28e, 0.25°) over the period **1950–2022**. It computes **8 annual extreme indices** selected for their scientific relevance to Germany's summer hazards (heat waves, heavy precipitation, drought), applies non-parametric trend statistics (Theil-Sen + Mann-Kendall with Yue-Wang autocorrelation correction), and links extreme-summer patterns to atmospheric and land-surface process drivers. All figures are produced in **IPCC AR6 publication style**.
+The study evaluates the performance of **ICON-CLM** (~12 km) against the **E-OBS** gridded observational dataset (v28e, 0.25°) over the period **1950–2022**. It computes **9 annual extreme indices** selected for their scientific relevance to Germany's summer hazards (heat waves, heavy precipitation, drought), applies non-parametric trend statistics (Theil-Sen + Mann-Kendall with Yue-Wang autocorrelation correction), and links extreme-summer patterns to atmospheric and land-surface process drivers. All figures are produced in **IPCC AR6 publication style**.
 
 ---
 
@@ -36,7 +36,7 @@ The study evaluates the performance of **ICON-CLM** (~12 km) against the **E-OBS
 .
 ├── utils.py                  # Shared utilities (imported by all scripts)
 ├── script1_mean_climate.py   # JJA mean temperature and precipitation: climatology, bias, trends
-├── script2_extremes.py       # 8 annual extreme indices + trend maps + summary figures
+├── script2_extremes.py       # 9 annual extreme indices + trend maps + summary figures
 ├── script3_drivers.py        # Process-driver composite and correlation analysis
 │
 ├── requirements.txt          # Python dependencies
@@ -56,7 +56,7 @@ clear error if script 2 has not been run first.
 
 ---
 
-## Extreme Indices Computed (8 total)
+## Extreme Indices Computed (9 total)
 
 The index set is deliberately compact, retaining only indices with a clear physical
 interpretation, high signal-to-noise ratio in Germany's summer climate, and direct
@@ -89,11 +89,12 @@ and energy-demand impact assessments.
 | **Rx5day** | Annual maximum consecutive 5-day precipitation (mm) | Sliding 5-day window | Basin-scale river flooding |
 | **SDII** | Mean precipitation on wet days (mm wet-day⁻¹) | Wet day: P ≥ 1 mm day⁻¹ | Per-event intensity change independent of frequency |
 
-### Precipitation — Drought (1)
+### Precipitation — Drought (2)
 
 | Index | Definition | Threshold / method | Hazard relevance |
 |---|---|---|---|
 | **CDD** | Maximum consecutive dry days in JJA | P < 1 mm day⁻¹ | Drought spell persistence; soil-moisture depletion |
+| **SPI** | Standardised Precipitation Index on JJA seasonal totals | Gamma distribution fitted to 1961–1990 JJA totals per grid cell, mapped to a standard-normal variate; explicit zero-precip probability (p₀) | Meteorological drought & wet spells; SPI ≤ −1 moderately dry, ≤ −1.5 severely dry |
 
 ---
 
