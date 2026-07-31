@@ -141,7 +141,7 @@ PRECIP_DRIVERS = ["PSL", "LHF", "CLT", "CAPE", "CIN", "WIND"]
 #   SPI:  CLT r=+0.86, PSL r=-0.67, LHF r=+0.55 (all p<0.01)
 COMPOSITE_REP = {
     "Temperature":   ("T90p_exceedance_days", "T90p_days", "T90p"),
-    "Precipitation": ("SPI",                  "SPI",       "SPI"),
+    "Precipitation": ("CDD",                  "CDD",       "CDD"),   # CDD-only test; original: ("SPI", "SPI", "SPI")
 }
 
 # ── driver file config ─────────────────────────────────────────────────────────
@@ -500,23 +500,27 @@ if __name__ == "__main__":
     precip_drv = [d for d in PRECIP_DRIVERS if d in driver_series]
 
     # ── Part 1: correlation heatmaps ──────────────────────────────────────────
-    rows = []
-    print("\n[1/2] Correlation heatmaps")
-    print("Temperature group:")
-    run_correlation_group("Temperature",   TEMP_INDICES,   temp_drv,
-                          driver_series, rows)
-    print("Precipitation group:")
-    run_correlation_group("Precipitation", PRECIP_INDICES, precip_drv,
-                          driver_series, rows)
-
-    if rows:
-        pd.DataFrame(rows).to_csv(
-            os.path.join(TABDIR, "driver_correlations.csv"), index=False)
-        print(f"  Saved: {TABDIR}/driver_correlations.csv")
+    # ═══ TEMPORARILY DISABLED (CDD-only test) — RE-ENABLE THIS WHOLE BLOCK ═════
+    # rows = []
+    # print("\n[1/2] Correlation heatmaps")
+    # print("Temperature group:")
+    # run_correlation_group("Temperature",   TEMP_INDICES,   temp_drv,
+    #                       driver_series, rows)
+    # print("Precipitation group:")
+    # run_correlation_group("Precipitation", PRECIP_INDICES, precip_drv,
+    #                       driver_series, rows)
+    #
+    # if rows:
+    #     pd.DataFrame(rows).to_csv(
+    #         os.path.join(TABDIR, "driver_correlations.csv"), index=False)
+    #     print(f"  Saved: {TABDIR}/driver_correlations.csv")
+    # ═══ END TEMPORARILY DISABLED ═════════════════════════════════════════════
 
     # ── Part 2: composite anomaly maps ────────────────────────────────────────
     print("\n[2/2] Composite anomaly maps")
-    run_composite_group("Temperature",   temp_drv,   gdf, geom)
+    # ═══ TEMPORARILY DISABLED (CDD-only test) — RE-ENABLE LATER ═══════════════
+    # run_composite_group("Temperature",   temp_drv,   gdf, geom)
+    # ═══ END TEMPORARILY DISABLED ═════════════════════════════════════════════
     run_composite_group("Precipitation", precip_drv, gdf, geom)
 
     print("\n" + "=" * 56)
