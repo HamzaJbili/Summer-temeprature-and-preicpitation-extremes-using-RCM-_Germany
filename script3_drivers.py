@@ -63,7 +63,7 @@ from utils import (
     reference_mean, compute_anomalies,
     load_country_shape, interp_display, build_mask, apply_mask,
     style_axis,
-    START_YEAR, END_YEAR, REF_START, REF_END, DPI,
+    START_YEAR, END_YEAR, REF_START, REF_END, DPI, ALPHA,
 )
 from utils import set_ipcc_style
 set_ipcc_style()
@@ -143,6 +143,10 @@ COMPOSITE_REP = {
     "Temperature":   ("T90p_exceedance_days", "T90p_days", "T90p"),
     "Precipitation": ("CDD",                  "CDD",       "CDD"),   # CDD-only test; original: ("SPI", "SPI", "SPI")
 }
+
+# Early / late split for the temporal composite comparison (ICON-only).
+# Early period: START_YEAR..EARLY_END ; late period: EARLY_END+1..END_YEAR.
+EARLY_END = 1985
 
 # ── driver file config ─────────────────────────────────────────────────────────
 _SUFFIX = "DE-0.25_JJA_1950-2022.nc"
@@ -353,6 +357,28 @@ def composite_anomaly(driver_anom, high_years, all_years):
             driver_anom.sel(year=low_years ).mean("year", skipna=True))
 
 
+def composite_pvalue(driver_anom, high_years, all_years):
+    """
+    Per-grid-cell significance of the composite difference (ICON-only).
+
+    Welch two-sample t-test at each grid cell, comparing the driver anomaly in
+    the extreme (top-tercile) summers against all remaining summers.  Returns a
+    2-D p-value field aligned to the driver grid; cells where the test cannot be
+    evaluated are left NaN (so they are simply not stippled).
+    """
+    from scipy.stats import ttest_ind
+    low_years = np.setdiff1d(all_years, high_years)
+    da = driver_anom.transpose("year", "lat", "lon")
+    hi = da.sel(year=high_years).values          # (n_high, lat, lon)
+    lo = da.sel(year=low_years ).values          # (n_low,  lat, lon)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        res = ttest_ind(hi, lo, axis=0, equal_var=False, nan_policy="omit")
+    pval = np.asarray(np.ma.filled(res.pvalue, np.nan), dtype=np.float32)
+    return xr.DataArray(pval,
+                        coords={"lat": da["lat"], "lon": da["lon"]},
+                        dims=("lat", "lon"), name="pval")
+
+
 def _interp_colors(palette, n):
     from matplotlib.colors import to_rgba
     rgba = np.array([to_rgba(c) for c in palette])
@@ -361,7 +387,7 @@ def _interp_colors(palette, n):
             np.column_stack([np.interp(xn, xs, rgba[:, i]) for i in range(4)])]
 
 
-def _draw_panel(ax, da, gdf, geom, levels, title, tag=None):
+def _draw_panel(ax, da, gdf, geom, levels, title, tag=None, pval=None):
     cmap = mcolors.ListedColormap(_interp_colors(DIV_COLORS, len(levels) - 1))
     norm = mcolors.BoundaryNorm(levels, cmap.N)
     cmap.set_under(DIV_COLORS[0]); cmap.set_over(DIV_COLORS[-1])
@@ -390,6 +416,17 @@ def _draw_panel(ax, da, gdf, geom, levels, title, tag=None):
     style_axis(ax)
 
     de_mask = build_mask(da["lon"].values, da["lat"].values, geom)
+
+    # Significance stippling — grid cells where the extreme-vs-rest difference
+    # is significant (Welch t-test, p < ALPHA).  Same marker style as the trend
+    # maps; only cells inside Germany are considered.
+    if pval is not None:
+        sig_mask   = (np.asarray(pval.values) < ALPHA) & de_mask
+        lo2d, la2d = np.meshgrid(da["lon"].values, da["lat"].values)
+        ax.scatter(lo2d[sig_mask], la2d[sig_mask],
+                   s=2.0, c="#1a1a1a", alpha=0.40, marker=".", zorder=7,
+                   rasterized=True, transform=PC)
+
     if de_mask.any():
         mv = float(np.nanmean(da.values[de_mask]))
         ax.text(0.03, 0.03, f"DE: {mv:+.1f}",
@@ -400,8 +437,12 @@ def _draw_panel(ax, da, gdf, geom, levels, title, tag=None):
     return cmap, norm
 
 
-def plot_composite_figure(composites, gdf, geom, outfile):
-    """One grouped multi-panel composite figure — one panel per driver."""
+def plot_composite_figure(composites, pvals, gdf, geom, outfile):
+    """One grouped multi-panel composite figure — one panel per driver.
+
+    Significance stippling (Welch t-test, extreme vs. rest summers) is overlaid
+    on each panel using the matching field in *pvals*.
+    """
     from matplotlib.gridspec import GridSpec
     names = list(composites.keys())
     n = len(names)
@@ -421,7 +462,7 @@ def plot_composite_figure(composites, gdf, geom, outfile):
         cmap, norm = _draw_panel(
             ax, composites[dname], gdf, geom,
             DRIVER_LEVELS[dname], DRIVER_LONG[dname],
-            tag=f"({chr(97 + k)})")
+            tag=f"({chr(97 + k)})", pval=pvals.get(dname))
 
         cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
         _lv = DRIVER_LEVELS[dname]
@@ -440,41 +481,54 @@ def plot_composite_figure(composites, gdf, geom, outfile):
     print(f"  Saved: {outfile}")
 
 
-def run_composite_group(group_name, drivers, gdf, geom):
-    """One grouped composite figure per group, using the representative index."""
+def run_composite_group(group_name, drivers, gdf, geom,
+                        yr_lo=None, yr_hi=None, suffix=""):
+    """
+    One grouped composite figure per group, using the representative index.
+
+    If *yr_lo*/*yr_hi* are given, the index and driver fields are first sliced
+    to that sub-period, so the extreme summers are selected *within* the period
+    (used for the early-vs-late comparison).  *suffix* is appended to the output
+    filename.  Each panel carries Welch-t significance stippling.
+    """
     display_name, nc_stem, label = COMPOSITE_REP[group_name]
     try:
         index_field = load_index_field(nc_stem, "ICON")
     except FileNotFoundError as e:
-        print(f"  [{group_name}] composite skipped — {e}")
+        print(f"  [{group_name}{suffix}] composite skipped — {e}")
         return
 
-    all_years  = index_field["year"].values.astype(int)
-    high_years = top_tercile_years(index_field)
-    print(f"  [{group_name}] {label}: top-tercile years ({len(high_years)}): "
-          f"{sorted(high_years)}")
+    if yr_lo is not None:
+        index_field = index_field.sel(year=slice(yr_lo, yr_hi))
 
-    composites = {}
+    high_years = top_tercile_years(index_field)
+    print(f"  [{group_name}{suffix}] {label}: top-tercile years "
+          f"({len(high_years)}): {sorted(high_years)}")
+
+    composites, pvals = {}, {}
     for dname in drivers:
         try:
             anom = load_driver_anom_field(dname)
         except Exception as e:
             print(f"    {dname}: could not load — {e}")
             continue
+        if yr_lo is not None:
+            anom = anom.sel(year=slice(yr_lo, yr_hi))
         anom_years = anom["year"].values.astype(int)
         common     = np.intersect1d(high_years, anom_years).astype(int)
         if len(common) < 3:
             print(f"    {dname}: <3 overlapping years — skipping.")
             continue
         composites[dname] = composite_anomaly(anom, common, anom_years)
+        pvals[dname]      = composite_pvalue(anom, common, anom_years)
 
     if len(composites) < 2:
-        print(f"  [{group_name}] not enough drivers — skipping composite figure.")
+        print(f"  [{group_name}{suffix}] not enough drivers — skipping figure.")
         return
 
     plot_composite_figure(
-        composites, gdf, geom,
-        outfile=os.path.join(FIGDIR, f"composite_{group_name.lower()}.png"))
+        composites, pvals, gdf, geom,
+        outfile=os.path.join(FIGDIR, f"composite_{group_name.lower()}{suffix}.png"))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -500,34 +554,35 @@ if __name__ == "__main__":
     precip_drv = [d for d in PRECIP_DRIVERS if d in driver_series]
 
     # ── Part 1: correlation heatmaps ──────────────────────────────────────────
-    # ═══ TEMPORARILY DISABLED (CDD-only test) — RE-ENABLE THIS WHOLE BLOCK ═════
-    # rows = []
-    # print("\n[1/2] Correlation heatmaps")
-    # print("Temperature group:")
-    # run_correlation_group("Temperature",   TEMP_INDICES,   temp_drv,
-    #                       driver_series, rows)
-    # print("Precipitation group:")
-    # run_correlation_group("Precipitation", PRECIP_INDICES, precip_drv,
-    #                       driver_series, rows)
-    #
-    # if rows:
-    #     pd.DataFrame(rows).to_csv(
-    #         os.path.join(TABDIR, "driver_correlations.csv"), index=False)
-    #     print(f"  Saved: {TABDIR}/driver_correlations.csv")
-    # ═══ END TEMPORARILY DISABLED ═════════════════════════════════════════════
+    rows = []
+    print("\n[1/2] Correlation heatmaps")
+    print("Temperature group:")
+    run_correlation_group("Temperature",   TEMP_INDICES,   temp_drv,
+                          driver_series, rows)
+    print("Precipitation group:")
+    run_correlation_group("Precipitation", PRECIP_INDICES, precip_drv,
+                          driver_series, rows)
+
+    if rows:
+        pd.DataFrame(rows).to_csv(
+            os.path.join(TABDIR, "driver_correlations.csv"), index=False)
+        print(f"  Saved: {TABDIR}/driver_correlations.csv")
 
     # ── Part 2: composite anomaly maps ────────────────────────────────────────
+    #   For each group: full-period composite + early / late sub-period split.
+    #   Each panel carries Welch-t significance stippling (extreme vs. rest).
     print("\n[2/2] Composite anomaly maps")
-    # ═══ TEMPORARILY DISABLED (CDD-only test) — RE-ENABLE LATER ═══════════════
-    # run_composite_group("Temperature",   temp_drv,   gdf, geom)
-    # ═══ END TEMPORARILY DISABLED ═════════════════════════════════════════════
-    run_composite_group("Precipitation", precip_drv, gdf, geom)
+    for grp, drv in [("Temperature", temp_drv), ("Precipitation", precip_drv)]:
+        run_composite_group(grp, drv, gdf, geom)                       # full period
+        run_composite_group(grp, drv, gdf, geom,
+                            yr_lo=int(START_YEAR), yr_hi=EARLY_END, suffix="_early")
+        run_composite_group(grp, drv, gdf, geom,
+                            yr_lo=EARLY_END + 1, yr_hi=int(END_YEAR), suffix="_late")
 
     print("\n" + "=" * 56)
     print("Done. Output:")
-    print(f"  {FIGDIR}/heatmap_temperature.png")
-    print(f"  {FIGDIR}/heatmap_precipitation.png")
-    print(f"  {FIGDIR}/composite_temperature.png")
-    print(f"  {FIGDIR}/composite_precipitation.png")
+    print(f"  {FIGDIR}/heatmap_temperature.png  heatmap_precipitation.png")
+    print(f"  {FIGDIR}/composite_temperature.png  composite_precipitation.png")
+    print(f"  {FIGDIR}/composite_*_early.png  composite_*_late.png")
     print(f"  {TABDIR}/driver_correlations.csv")
     print("=" * 56)
