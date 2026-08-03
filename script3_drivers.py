@@ -379,6 +379,35 @@ def composite_pvalue(driver_anom, high_years, all_years):
                         dims=("lat", "lon"), name="pval")
 
 
+def composite_mean_anomaly(driver_anom, high_years):
+    """
+    Mean driver anomaly (vs 1961-1990) over the extreme summers only.
+
+    Unlike composite_anomaly (extreme minus rest), this keeps the 1961-1990
+    baseline, so the field is an *absolute* anomaly level.  That makes the
+    early- and late-period figures directly comparable — a period-wide drift
+    (e.g. from changing aerosol / GHG forcing) shows up here, whereas it
+    cancels out in the extreme-minus-rest composite.
+    """
+    return driver_anom.sel(year=high_years).mean("year", skipna=True)
+
+
+def composite_mean_pvalue(driver_anom, high_years):
+    """
+    Per-grid-cell one-sample t-test: is the extreme-summer mean anomaly
+    different from the 1961-1990 climatology (i.e. from zero)?
+    """
+    from scipy.stats import ttest_1samp
+    da = driver_anom.transpose("year", "lat", "lon")
+    hi = da.sel(year=high_years).values          # (n_high, lat, lon)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        res = ttest_1samp(hi, popmean=0.0, axis=0, nan_policy="omit")
+    pval = np.asarray(np.ma.filled(res.pvalue, np.nan), dtype=np.float32)
+    return xr.DataArray(pval,
+                        coords={"lat": da["lat"], "lon": da["lon"]},
+                        dims=("lat", "lon"), name="pval")
+
+
 def _interp_colors(palette, n):
     from matplotlib.colors import to_rgba
     rgba = np.array([to_rgba(c) for c in palette])
@@ -482,14 +511,20 @@ def plot_composite_figure(composites, pvals, gdf, geom, outfile):
 
 
 def run_composite_group(group_name, drivers, gdf, geom,
-                        yr_lo=None, yr_hi=None, suffix=""):
+                        yr_lo=None, yr_hi=None, suffix="", mode="contrast"):
     """
     One grouped composite figure per group, using the representative index.
 
-    If *yr_lo*/*yr_hi* are given, the index and driver fields are first sliced
-    to that sub-period, so the extreme summers are selected *within* the period
-    (used for the early-vs-late comparison).  *suffix* is appended to the output
-    filename.  Each panel carries Welch-t significance stippling.
+    *yr_lo*/*yr_hi* restrict the analysis to a sub-period (extremes selected
+    within it); *suffix* is appended to the output filename.
+
+    mode="contrast"  -> field = mean(extreme) - mean(rest) anomaly; a baseline-
+                        free "what drives extreme summers" composite, with a
+                        two-sample (extreme vs rest) t-test.  Used full-period.
+    mode="absolute"  -> field = mean extreme-summer anomaly vs 1961-1990; keeps
+                        the common baseline so early/late are comparable, with a
+                        one-sample t-test (vs the 1961-1990 normal).  Used for
+                        the early/late drift comparison.
     """
     display_name, nc_stem, label = COMPOSITE_REP[group_name]
     try:
@@ -519,8 +554,12 @@ def run_composite_group(group_name, drivers, gdf, geom,
         if len(common) < 3:
             print(f"    {dname}: <3 overlapping years — skipping.")
             continue
-        composites[dname] = composite_anomaly(anom, common, anom_years)
-        pvals[dname]      = composite_pvalue(anom, common, anom_years)
+        if mode == "absolute":
+            composites[dname] = composite_mean_anomaly(anom, common)
+            pvals[dname]      = composite_mean_pvalue(anom, common)
+        else:
+            composites[dname] = composite_anomaly(anom, common, anom_years)
+            pvals[dname]      = composite_pvalue(anom, common, anom_years)
 
     if len(composites) < 2:
         print(f"  [{group_name}{suffix}] not enough drivers — skipping figure.")
@@ -569,14 +608,16 @@ if __name__ == "__main__":
         print(f"  Saved: {TABDIR}/driver_correlations.csv")
 
     # ── Part 2: composite anomaly maps ────────────────────────────────────────
-    #   For each group: full-period composite + early / late sub-period split.
-    #   Each panel carries Welch-t significance stippling (extreme vs. rest).
+    #   For each group:
+    #     full period   -> extreme-minus-rest composite ("what drives extremes")
+    #     early / late  -> extreme-summer anomaly vs 1961-1990 (absolute level,
+    #                      comparable across periods -> forcing-driven drift)
     print("\n[2/2] Composite anomaly maps")
     for grp, drv in [("Temperature", temp_drv), ("Precipitation", precip_drv)]:
-        run_composite_group(grp, drv, gdf, geom)                       # full period
-        run_composite_group(grp, drv, gdf, geom,
+        run_composite_group(grp, drv, gdf, geom)                       # full: contrast
+        run_composite_group(grp, drv, gdf, geom, mode="absolute",
                             yr_lo=int(START_YEAR), yr_hi=EARLY_END, suffix="_early")
-        run_composite_group(grp, drv, gdf, geom,
+        run_composite_group(grp, drv, gdf, geom, mode="absolute",
                             yr_lo=EARLY_END + 1, yr_hi=int(END_YEAR), suffix="_late")
 
     print("\n" + "=" * 56)
