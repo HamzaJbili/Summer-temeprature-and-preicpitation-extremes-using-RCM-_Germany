@@ -1,0 +1,2335 @@
+"""
+utils.py
+--------
+Shared utilities for the summer-extremes analysis.
+
+All functions are imported by the main scripts; nothing runs on import.
+
+Scientific references for index definitions
+-------------------------------------------
+- ETCCDI: Expert Team on Climate Change Detection and Indices
+  (https://etccdi.pacificclimate.org/)
+- Alexander et al. (2006) Global observed changes in daily climate extremes
+  of temperature and precipitation, JGR-Atmos.
+- Frich et al. (2002) Observed coherent changes in climatic extremes during
+  the second half of the twentieth century, Clim. Res.
+- Zolina et al. (2010) Improving estimates of heavy and extreme precipitation
+  using daily records from European rain gauges, J. Hydrometeor.
+- Zolina et al. (2014) Precipitation variability and extremes in central Europe,
+  Clim. Dyn.
+- Fischer et al. (2014) Robust spatially aggregated projections of climate
+  extremes, Nature Clim. Change.
+- Donat et al. (2013) Updated analyses of temperature and precipitation extreme
+  indices since the beginning of the twentieth century, JGR-Atmos.
+- Moberg & Jones (2005) Trends in indices for extremes in daily temperature and
+  precipitation in central and western Europe, Int. J. Climatol.
+- Yue & Wang (2004) The Mann-Kendall test modified by effective sample size to
+  detect trend in serially correlated hydrological series, Water Resour. Res.
+"""
+
+import os
+import warnings
+import numpy as np
+import pandas as pd
+import xarray as xr
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+from matplotlib.colorbar import ColorbarBase
+from matplotlib.path import Path
+from matplotlib.ticker import FormatStrFormatter
+from scipy.stats import theilslopes
+import pymannkendall as mk
+import geopandas as gpd
+from shapely.ops import unary_union
+from shapely.geometry import Polygon, MultiPolygon
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+
+# ── shared settings (imported by all scripts) ─────────────────────────────────
+START_YEAR     = "1950"
+END_YEAR       = "2022"
+REF_START      = "1961"   # percentile threshold reference period (WMO)
+REF_END        = "1990"
+ANOM_START     = "1991"   # anomaly reference period (current WMO normal)
+ANOM_END       = "2020"
+ALPHA          = 0.05     # significance level for Mann-Kendall
+MIN_VALID      = 10       # minimum valid years required for a trend estimate
+DPI            = 600      # output resolution
+MAP_EXTENT     = [5.8, 15.2, 47.4, 55.1]   # Germany [lon_min, lon_max, lat_min, lat_max]
+DISPLAY_FACTOR = 5        # bilinear upsampling factor for map display (visual only)
+WET_DAY_MIN    = 1.0      # mm/day — wet-day threshold (SDII, CWD)
+DRY_DAY_MAX    = 1.0      # mm/day — dry-day threshold (Dry_days, CDD)
+
+# Standard diverging palette for Diff / Bias panels (blue–white–red).
+# Used universally across all trend-difference and climatology-bias maps so that
+# the reader can immediately distinguish an index-specific signal panel (left,
+# index colour palette) from a model-minus-obs difference panel (right, this
+# neutral palette).  Reference: EURO-CORDEX convention (Kotlarski et al. 2014).
+DIFF_COLORS = [
+    "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#f7f7f7",
+    "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f",
+]
+
+
+# ── Colorbar helpers ──────────────────────────────────────────────────────────
+def _interp_colors(palette, n):
+    """Return n evenly-interpolated hex colors from palette (no index repeats)."""
+    cmap_tmp = mcolors.LinearSegmentedColormap.from_list('_', palette)
+    return [mcolors.to_hex(cmap_tmp(x)) for x in np.linspace(0, 1, n)]
+
+
+def _smart_ticks(lvls):
+    """Return all level boundaries as tick positions (every band labeled)."""
+    return list(lvls)
+
+
+def _auto_scale_palette(data_arr, base_levels, base_colors, force_diverging=False):
+    """Auto-scale levels and palette to one panel's data range.
+
+    force_diverging=True: always use a symmetric diverging scale centred at
+    zero — blue = negative (cooling), red = positive (warming) — regardless
+    of whether the data actually spans both signs.  Correct for paired
+    E-OBS / ICON trend maps where all-positive data should still show the
+    standard blue-red convention.  Default False preserves old behaviour.
+
+    Returns (levels, colors, cmap, norm).
+    """
+    colors = list(base_colors)
+    levels = list(base_levels)
+    base_is_div = min(levels) < 0 < max(levels)
+    valid = np.asarray(data_arr).ravel()
+    valid = valid[np.isfinite(valid)]
+    if len(valid) <= 10:
+        cmap = mcolors.ListedColormap(colors)
+        cmap.set_under(colors[0])
+        cmap.set_over(colors[-1])
+        norm = mcolors.BoundaryNorm(levels, cmap.N)
+        return levels, colors, cmap, norm
+    p2, p98 = np.percentile(valid, 2), np.percentile(valid, 98)
+
+    # Treat as diverging if the base palette is diverging AND either the data
+    # actually spans both signs, OR the caller forces it.
+    is_diverging = base_is_div and (p2 < 0 or force_diverging)
+
+    if is_diverging:
+        ext    = max(abs(p2), abs(p98))
+        lo, hi = -ext, ext
+    else:
+        lo, hi = p2, p98
+    n_target = 14 if is_diverging else 12
+    span     = hi - lo
+    if not np.isfinite(span) or span < 1e-12:
+        cmap = mcolors.ListedColormap(colors)
+        cmap.set_under(colors[0])
+        cmap.set_over(colors[-1])
+        norm = mcolors.BoundaryNorm(levels, cmap.N)
+        return levels, colors, cmap, norm
+    raw_step = span / n_target
+    mag      = 10.0 ** np.floor(np.log10(raw_step))
+    step     = min([f * mag for f in [1, 2, 5, 10]],
+                   key=lambda s: abs(span / s - n_target))
+    if is_diverging:
+        n_half = max(1, round(hi / step))
+        if n_half % 2 != 0:
+            n_half += 1
+        nice = [round(i * step, 10) for i in range(-n_half, n_half + 1)]
+    else:
+        start = np.floor(lo / step) * step
+        nice  = np.round(np.arange(start, hi + step * 0.01, step), 10).tolist()
+        if hi < 0:
+            nice = [t for t in nice if t < 0]
+        elif lo > 0:
+            nice = [t for t in nice if t > 0]
+    margin = span * 0.08
+    nice   = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
+    if len(nice) >= 3:
+        n_new = len(nice) - 1
+        if base_is_div and not is_diverging:
+            # Sequential (never reached when force_diverging=True)
+            center = len(colors) // 2
+            sub    = colors[center:] if p98 > 0 else colors[:center + 1]
+            colors = _interp_colors(sub, n_new)
+        else:
+            colors = _interp_colors(colors, n_new)
+        levels = nice
+    cmap = mcolors.ListedColormap(colors)
+    cmap.set_under(colors[0])
+    cmap.set_over(colors[-1])
+    norm = mcolors.BoundaryNorm(levels, cmap.N)
+    return levels, colors, cmap, norm
+
+
+# ── IPCC / publication style ──────────────────────────────────────────────────
+def set_ipcc_style():
+    """
+    Apply IPCC AR6 Working Group I figure style globally.
+
+    Call once at the start of each script.  Sets fonts, sizes, and defaults
+    to match the standards used in IPCC AR6 and major climate journals.
+    All subsequent matplotlib calls inherit these settings.
+    """
+    mpl.rcParams.update({
+        "font.family":          "sans-serif",
+        "font.sans-serif":      ["Helvetica Neue", "Helvetica", "Arial", "DejaVu Sans"],
+        "font.size":            9,
+        "axes.titlesize":       10,
+        "axes.titleweight":     "bold",
+        "axes.labelsize":       9,
+        "xtick.labelsize":      8,
+        "ytick.labelsize":      8,
+        "legend.fontsize":      8,
+        "legend.framealpha":    0.85,
+        "legend.edgecolor":     "0.75",
+        "figure.facecolor":     "white",
+        "figure.dpi":           150,
+        "savefig.dpi":          DPI,
+        "savefig.bbox":         "tight",
+        "savefig.pad_inches":   0.05,
+        "savefig.facecolor":    "white",
+        "axes.linewidth":       0.8,
+        "grid.linewidth":       0.35,
+        "grid.color":           "#cccccc",
+        "grid.alpha":           0.55,
+        "lines.linewidth":      1.5,
+        "patch.linewidth":      0.6,
+        "hatch.linewidth":      0.4,
+    })
+
+
+# ── data loading ───────────────────────────────────────────────────────────────
+def load_field(path, varname, start=START_YEAR, end=END_YEAR):
+    """
+    Load a variable from a NetCDF file; harmonise lat/lon coordinate names.
+
+    Parameters
+    ----------
+    path    : str  — path to NetCDF file
+    varname : str  — variable name inside the file
+    start, end : str — year strings for time slicing (e.g. "1950", "2022")
+
+    Returns
+    -------
+    xr.DataArray sorted by lat and lon, sliced to [start, end].
+    """
+    ds = xr.open_dataset(path)
+    rename = {}
+    if "latitude"  in ds.coords: rename["latitude"]  = "lat"
+    if "longitude" in ds.coords: rename["longitude"] = "lon"
+    if rename:
+        ds = ds.rename(rename)
+    if varname not in ds:
+        raise KeyError(
+            f"Variable '{varname}' not found in {path}. "
+            f"Available variables: {list(ds.data_vars)}"
+        )
+    da = ds[varname].sel(time=slice(start, end))
+    return da.sortby("lat").sortby("lon")
+
+
+def keep_jja(da):
+    """
+    Subset a daily DataArray to June–July–August days only.
+
+    Returns a DataArray with only the JJA time steps retained.
+    """
+    return da.where(da["time"].dt.month.isin([6, 7, 8]), drop=True)
+
+
+# ── climatology and anomalies ─────────────────────────────────────────────────
+def annual_jja_mean(da):
+    """Annual JJA mean (temperature or any continuous variable, °C or K)."""
+    return da.groupby("time.year").mean("time").astype(np.float32)
+
+
+def annual_jja_sum(da):
+    """Annual JJA total (precipitation, mm season⁻¹)."""
+    return da.groupby("time.year").sum("time").astype(np.float32)
+
+
+def reference_mean(annual_da, start=ANOM_START, end=ANOM_END):
+    """
+    Climatological mean over a reference period (default: 1991-2020 WMO normal).
+
+    Parameters
+    ----------
+    annual_da : xr.DataArray with 'year' dimension
+    start, end : str — boundary years (inclusive)
+    """
+    return annual_da.sel(year=slice(int(start), int(end))).mean("year", skipna=True)
+
+
+def compute_anomalies(annual_da, climatology):
+    """Subtract a climatology DataArray from every year of *annual_da*."""
+    return annual_da - climatology
+
+
+def area_mean(da):
+    """Unweighted spatial mean over all valid (non-NaN) Germany grid cells."""
+    return da.mean(dim=("lat", "lon"), skipna=True)
+
+
+def rmse(a, b):
+    """Root-mean-square error between two 1-D arrays (NaN-safe)."""
+    valid = np.isfinite(a) & np.isfinite(b)
+    if valid.sum() == 0:
+        return np.nan
+    return float(np.sqrt(np.mean((a[valid] - b[valid]) ** 2)))
+
+
+# ── trend estimation ──────────────────────────────────────────────────────────
+def compute_trend_maps(annual_da):
+    """
+    Compute per-gridcell Theil-Sen slope (unit per decade) and Mann-Kendall
+    p-value with Yue-Wang autocorrelation correction at every grid point.
+
+    The Yue-Wang modification applies trend-free pre-whitening (TFPW) before
+    the MK test, which removes inflation of the test statistic caused by
+    lag-1 positive autocorrelation (Yue & Wang, 2004).  Falls back to the
+    original MK test if the correction raises an exception.
+
+    Grid cells with fewer than MIN_VALID valid years are left as NaN.
+
+    Returns
+    -------
+    xr.Dataset with variables:
+        sen_slope : Theil-Sen slope [unit / decade]
+        mk_pvalue : Mann-Kendall two-tailed p-value
+        mk_z      : Mann-Kendall standardised test statistic
+    """
+    years = annual_da["year"].values.astype(float)
+    lat   = annual_da["lat"].values
+    lon   = annual_da["lon"].values
+    arr   = annual_da.values          # (year, lat, lon)
+
+    slope_map = np.full((len(lat), len(lon)), np.nan)
+    p_map     = np.full((len(lat), len(lon)), np.nan)
+    z_map     = np.full((len(lat), len(lon)), np.nan)
+
+    for i in range(len(lat)):
+        for j in range(len(lon)):
+            series = arr[:, i, j]
+            valid  = np.isfinite(series)
+            if valid.sum() < MIN_VALID:
+                continue
+            yy, xx = series[valid], years[valid]
+
+            # Theil-Sen slope converted from per-year to per-decade
+            slope, _, _, _ = theilslopes(yy, xx, 0.95)
+            slope_map[i, j] = slope * 10.0
+
+            # Mann-Kendall with Yue-Wang TFPW autocorrelation correction
+            try:
+                res = mk.yue_wang_modification_test(yy)
+            except Exception:
+                res = mk.original_test(yy)
+            p_map[i, j] = res.p
+            z_map[i, j] = res.z
+
+    return xr.Dataset(
+        {"sen_slope": (("lat", "lon"), slope_map),
+         "mk_pvalue": (("lat", "lon"), p_map),
+         "mk_z":      (("lat", "lon"), z_map)},
+        coords={"lat": lat, "lon": lon},
+    )
+
+
+def series_stats(annual_series):
+    """
+    Trend statistics for a 1-D Germany-average annual time series.
+
+    Returns
+    -------
+    dict with keys:
+        sen_slope_decade : Theil-Sen slope per decade
+        mk_p             : Mann-Kendall two-tailed p-value (Yue-Wang)
+        mk_z             : Mann-Kendall Z statistic
+    """
+    years = annual_series["year"].values.astype(float)
+    y     = annual_series.values
+    valid = np.isfinite(y)
+    if valid.sum() < MIN_VALID:
+        return {"sen_slope_decade": np.nan, "mk_p": np.nan, "mk_z": np.nan}
+    slope, _, _, _ = theilslopes(y[valid], years[valid], 0.95)
+    try:
+        res = mk.yue_wang_modification_test(y[valid])
+    except Exception:
+        res = mk.original_test(y[valid])
+    return {
+        "sen_slope_decade": float(slope * 10.0),
+        "mk_p":             float(res.p),
+        "mk_z":             float(res.z),
+    }
+
+
+# ── Germany shapefile and masking ─────────────────────────────────────────────
+def load_country_shape(shp_path):
+    """
+    Load the Germany boundary shapefile and return (GeoDataFrame, unified geometry).
+
+    The GeoDataFrame is reprojected to WGS-84 (EPSG:4326).  The unified geometry
+    is the shapely union of all sub-geometries (used for clipping and masking).
+    """
+    gdf  = gpd.read_file(shp_path).to_crs("EPSG:4326")
+    geom = unary_union(gdf.geometry)
+    return gdf, geom
+
+
+def _polygon_to_path(geom):
+    """Convert a Shapely Polygon or MultiPolygon to a matplotlib Path."""
+    vertices, codes = [], []
+
+    def _add(poly):
+        x, y = poly.exterior.coords.xy
+        pts  = np.column_stack([x, y])
+        c    = np.full(len(pts), Path.LINETO, dtype=np.uint8)
+        c[0] = Path.MOVETO
+        vertices.extend(pts.tolist())
+        codes.extend(c.tolist())
+        vertices.append((0, 0))
+        codes.append(Path.CLOSEPOLY)
+
+    if isinstance(geom, Polygon):
+        _add(geom)
+    elif isinstance(geom, MultiPolygon):
+        for poly in geom.geoms:
+            _add(poly)
+    else:
+        raise ValueError(f"Unsupported geometry type: {type(geom)}")
+    return Path(np.asarray(vertices, float), np.asarray(codes))
+
+
+def build_mask(lon, lat, geom):
+    """
+    Boolean array (True inside Germany) with shape (len(lat), len(lon)).
+
+    Uses the matplotlib Path approach: a grid cell is 'inside' if its centre
+    point lies inside the Germany boundary polygon.
+    """
+    path   = _polygon_to_path(geom)
+    lo, la = np.meshgrid(lon, lat)
+    pts    = np.column_stack([lo.ravel(), la.ravel()])
+    return path.contains_points(pts).reshape(len(lat), len(lon))
+
+
+def apply_mask(arr2d, mask2d):
+    """Set grid cells outside *mask2d* (False) to NaN."""
+    out = np.array(arr2d, dtype=float)
+    out[~mask2d] = np.nan
+    return out
+
+
+def clip_contourf(cf, ax, geom):
+    """
+    Clip a filled-contour set to a Shapely geometry on a plain (non-Cartopy) Axes.
+
+    Used by script3 driver-composite maps, which are drawn on ordinary
+    matplotlib Axes using lon/lat as data coordinates.  NaN-masking alone
+    leaves fill bleeding past the national border because contourf
+    interpolates across the boundary; setting an explicit clip path removes it.
+
+    Parameters
+    ----------
+    cf   : matplotlib QuadContourSet returned by ax.contourf(...)
+    ax   : the Axes the contour set was drawn on (data coords = lon/lat)
+    geom : Shapely Polygon / MultiPolygon (Germany boundary)
+    """
+    from matplotlib.patches import PathPatch
+    path  = _polygon_to_path(geom)
+    patch = PathPatch(path, transform=ax.transData,
+                      facecolor="none", edgecolor="none", zorder=0)
+    ax.add_patch(patch)
+    try:
+        # matplotlib >= 3.8: ContourSet is itself an Artist
+        cf.set_clip_path(patch)
+    except AttributeError:
+        # older matplotlib: clip each underlying collection
+        for coll in cf.collections:
+            coll.set_clip_path(patch)
+    return patch
+
+
+
+def interp_display(da2d, factor=DISPLAY_FACTOR):
+    """
+    Bilinearly upsample a 2-D DataArray for smoother map rendering.
+
+    This is purely cosmetic (display quality); all statistics are computed
+    on the original grid and are never affected by this function.
+    """
+    lo      = da2d["lon"].values
+    la      = da2d["lat"].values
+    lo_fine = np.linspace(lo.min(), lo.max(), len(lo) * factor)
+    la_fine = np.linspace(la.min(), la.max(), len(la) * factor)
+    return da2d.interp(lon=lo_fine, lat=la_fine, method="linear")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Climatology and bias map figures (used by script1)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def plot_climatology_maps(obs_clim, mod_clim, gdf, geom, outfile,
+                          levels, colors, cbar_label, tick_fmt="%.0f",
+                          suptitle=None,
+                          bias_levels=None, bias_colors=None,
+                          bias_label=None, bias_tick_fmt="%.1f"):
+    """
+    Three-panel climatology figure: (a) E-OBS | (b) ICON-CLM | (c) Diff.
+
+    E-OBS and ICON share the same explicit colorbar levels.
+    The Diff panel uses explicit bias_levels (required — no auto-scaling).
+
+    Parameters
+    ----------
+    obs_clim, mod_clim : xr.DataArray (lat, lon)
+    gdf, geom : Germany geometry
+    outfile   : str
+    levels    : list — shared sequential levels for E-OBS and ICON panels.
+    colors    : list — colours for sequential panels.
+    cbar_label : str — unit label (e.g. "days/summer").
+    tick_fmt  : str
+    suptitle  : str, optional
+    bias_levels : list — explicit diverging levels for the Diff panel (required).
+    bias_colors : list — colours for Diff panel (default blue-white-red).
+    bias_label  : str — Diff colorbar label (auto-derived if None).
+    bias_tick_fmt : str
+    """
+    if bias_levels is None:
+        raise ValueError(
+            "plot_climatology_maps: bias_levels must be supplied explicitly. "
+            "Auto-scaling the bias colorbar to the domain maximum distorts the "
+            "colour mapping when coastal cells are outliers."
+        )
+
+    _DEFAULT_BIAS_COLORS = [
+        "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#f7f7f7",
+        "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f",
+    ]
+    if bias_colors is None:
+        bias_colors = _interp_colors(_DEFAULT_BIAS_COLORS, len(bias_levels) - 1)
+
+    if bias_label is None:
+        bias_label = cbar_label
+
+    bias = (mod_clim - obs_clim).astype(np.float32)
+
+    PC   = ccrs.PlateCarree()
+    PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
+
+    obs_cols = _interp_colors(colors, len(levels) - 1)
+    cmap_obs = mcolors.ListedColormap(obs_cols)
+    cmap_obs.set_under(obs_cols[0]); cmap_obs.set_over(obs_cols[-1])
+    norm_obs = mcolors.BoundaryNorm(levels, cmap_obs.N)
+
+    bias_cols = _interp_colors(bias_colors, len(bias_levels) - 1)
+    cmap_bias = mcolors.ListedColormap(bias_cols)
+    cmap_bias.set_under(bias_cols[0]); cmap_bias.set_over(bias_cols[-1])
+    norm_bias = mcolors.BoundaryNorm(bias_levels, cmap_bias.N)
+
+    from matplotlib.gridspec import GridSpec
+    fig = plt.figure(figsize=(15.5, 4.8))
+    fig.patch.set_facecolor("white")
+    if suptitle:
+        fig.suptitle(suptitle, fontsize=11, fontweight="normal", y=0.99)
+
+    gs = GridSpec(1, 5, width_ratios=[1, 0.08, 1, 0.08, 1],
+                  left=0.02, right=0.93, top=0.91, bottom=0.06,
+                  wspace=0.0)
+
+    panels = [
+        dict(ax=fig.add_subplot(gs[0, 0], projection=PROJ),
+             da=obs_clim, cmap=cmap_obs,  norm=norm_obs,
+             lvls=levels,      lbl=cbar_label,  fmt=tick_fmt,      tag="(a)", title="E-OBS"),
+        dict(ax=fig.add_subplot(gs[0, 2], projection=PROJ),
+             da=mod_clim, cmap=cmap_obs,  norm=norm_obs,
+             lvls=levels,      lbl=cbar_label,  fmt=tick_fmt,      tag="(b)", title="ICON-CLM"),
+        dict(ax=fig.add_subplot(gs[0, 4], projection=PROJ),
+             da=bias,     cmap=cmap_bias, norm=norm_bias,
+             lvls=bias_levels, lbl=bias_label,  fmt=bias_tick_fmt, tag="(c)",
+             title="Bias (ICON − E-OBS)"),
+    ]
+
+    for p in panels:
+        ax = p["ax"]
+        ax.set_extent(MAP_EXTENT, crs=PC)
+        ax.set_facecolor("#d6e8f2")
+        ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
+        ax.add_feature(cfeature.BORDERS.with_scale("10m"),
+                       linewidth=0.3, edgecolor="0.45", zorder=2)
+
+        fine = interp_display(p["da"])
+        mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
+        arr  = apply_mask(fine.values, mask)
+
+        ax.contourf(
+            fine["lon"].values, fine["lat"].values, arr,
+            levels=p["lvls"], cmap=p["cmap"], norm=p["norm"],
+            transform=PC, extend="both", antialiased=True, zorder=3,
+        )
+        ax.add_geometries(gdf.geometry, PC, facecolor="none",
+                          edgecolor="black", linewidth=0.55, zorder=6)
+        ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
+                ha="left", va="top", fontsize=9, fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
+        ax.set_title(p["title"], fontsize=10.5, fontweight="normal", pad=4)
+        style_axis(ax)
+
+        # Germany-mean annotation
+        de_mask_c = build_mask(p["da"]["lon"].values, p["da"]["lat"].values, geom)
+        if de_mask_c.any():
+            mean_v = float(np.nanmean(p["da"].values[de_mask_c]))
+            sign   = "+" if mean_v >= 0 else ""
+            ax.text(0.03, 0.03, f"DE: {sign}{p['fmt'] % mean_v}",
+                    transform=ax.transAxes, ha="left", va="bottom",
+                    fontsize=8.5, color="#222222",
+                    bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                              ec="#aaaaaa", alpha=0.92, lw=0.5))
+
+        # Slim vertical colorbar — rectangular ends
+        cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
+        cb = ColorbarBase(cax, cmap=p["cmap"], norm=p["norm"],
+                          boundaries=p["lvls"], ticks=p["lvls"],
+                          orientation="vertical", extend="neither")
+        cb.ax.tick_params(labelsize=8.5, pad=2, length=3, width=0.5, direction="out")
+        cb.ax.yaxis.set_major_formatter(FormatStrFormatter(p["fmt"]))
+        cb.outline.set_linewidth(0.5)
+        cb.set_label(p["lbl"], fontsize=9.5, labelpad=4)
+
+    fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_grouped_trend_maps(
+    indices, gdf, geom, outfile,
+    suptitle=None,
+):
+    """
+    Multi-row trend map figure: each index gets one row of three panels
+    (E-OBS | ICON-CLM | Diff ICON−E-OBS), stacked vertically.
+
+    E-OBS and ICON-CLM share a pooled colorbar scale so the visual comparison
+    is direct (same colour = same value).  Stippling on both data panels.
+
+    Parameters
+    ----------
+    indices : list of dict, each with keys:
+        annual_obs, annual_model : xr.DataArray (year, lat, lon)
+        obs_levels, obs_colors   : colormap for E-OBS and ICON panels (shared)
+        trend_unit               : str
+        tick_fmt                 : str
+        row_label                : str (short, used as row title)
+        obs_sequential           : bool, optional (default False)
+    gdf, geom : Germany geometry
+    outfile   : str
+    suptitle  : str, optional
+    """
+    from matplotlib.gridspec import GridSpec
+
+    n = len(indices)
+    PC   = ccrs.PlateCarree()
+    PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
+
+    fig = plt.figure(figsize=(15.5, 4.8 * n))
+    fig.patch.set_facecolor("white")
+    if suptitle:
+        fig.suptitle(suptitle, fontsize=11, fontweight="normal", y=1.00)
+
+    gs = GridSpec(n, 5, width_ratios=[1, 0.08, 1, 0.08, 1],
+                  left=0.02, right=0.92,
+                  top=0.94 if suptitle else 0.97,
+                  bottom=0.03,
+                  hspace=0.14, wspace=0.0)
+
+    _all_tags = list("abcdefghijklmnopqrstuvwxyz")
+
+    for row, idx in enumerate(indices):
+        trend_obs   = compute_trend_maps(idx["annual_obs"])
+        trend_model = compute_trend_maps(idx["annual_model"])
+        diff        = trend_model["sen_slope"] - trend_obs["sen_slope"]
+
+        obs_colors_orig  = list(idx["obs_colors"])
+        diff_colors_orig = list(DIFF_COLORS)
+        obs_levels_base  = list(idx["obs_levels"])
+
+        def _scale(data_arr, base_colors, base_levels, sequential=False):
+            valid = data_arr[np.isfinite(data_arr)]
+            base_is_div = min(base_levels) < 0 < max(base_levels)
+            if len(valid) < 10:
+                cmap = mcolors.ListedColormap(base_colors)
+                norm = mcolors.BoundaryNorm(base_levels, cmap.N)
+                return list(base_levels), list(base_colors), cmap, norm
+            p2, p98 = np.percentile(valid, 2), np.percentile(valid, 98)
+            is_div = (not sequential) and base_is_div
+            if is_div:
+                ext = max(abs(p2), abs(p98))
+                lo, hi = -ext, ext
+            else:
+                lo, hi = np.percentile(valid, 5), np.percentile(valid, 95)
+            span     = hi - lo
+            raw_step = span / 12
+            mag      = 10.0 ** np.floor(np.log10(max(raw_step, 1e-10)))
+            step     = min([f * mag for f in [1, 2, 5, 10]],
+                           key=lambda s: abs(span / max(s, 1e-10) - 12))
+            if is_div:
+                n_half = max(1, round(hi / step))
+                nice = [round(i * step, 10) for i in range(-n_half, n_half + 1)]
+            else:
+                start = np.floor(lo / step) * step
+                nice = np.round(np.arange(start, hi + step * 0.01, step), 10).tolist()
+            margin = span * 0.08
+            nice = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
+            if len(nice) < 3:
+                nice = list(base_levels)
+            n_new = len(nice) - 1
+            colors = _interp_colors(base_colors, n_new)
+            cmap = mcolors.ListedColormap(colors)
+            cmap.set_under(colors[0]); cmap.set_over(colors[-1])
+            norm = mcolors.BoundaryNorm(nice, cmap.N)
+            return nice, colors, cmap, norm
+
+        # Shared pooled scale for E-OBS + ICON so the visual comparison is direct
+        _combined_t = np.concatenate([
+            trend_obs["sen_slope"].values.ravel(),
+            trend_model["sen_slope"].values.ravel(),
+        ])
+        obs_lvls, _, cmap_obs, norm_obs = _scale(
+            _combined_t, obs_colors_orig, obs_levels_base,
+            sequential=idx.get("obs_sequential", False))
+        diff_lvls, _, cmap_diff, norm_diff = _scale(
+            diff.values, diff_colors_orig, obs_levels_base)
+
+        t0, t1, t2 = (f"({_all_tags[row*3+k]})" for k in range(3))
+
+        panels = [
+            dict(ax=fig.add_subplot(gs[row, 0], projection=PROJ),
+                 da=trend_obs["sen_slope"], cmap=cmap_obs, norm=norm_obs,
+                 lvls=obs_lvls, tag=t0,
+                 title="E-OBS", pval=trend_obs["mk_pvalue"],
+                 row_lbl=idx["row_label"],
+                 stipple=True, fmt=idx["tick_fmt"], lbl=idx["trend_unit"]),
+            dict(ax=fig.add_subplot(gs[row, 2], projection=PROJ),
+                 da=trend_model["sen_slope"], cmap=cmap_obs, norm=norm_obs,
+                 lvls=obs_lvls, tag=t1,
+                 title="ICON-CLM", pval=trend_model["mk_pvalue"],
+                 stipple=True, fmt=idx["tick_fmt"], lbl=idx["trend_unit"]),
+            dict(ax=fig.add_subplot(gs[row, 4], projection=PROJ),
+                 da=diff, cmap=cmap_diff, norm=norm_diff,
+                 lvls=diff_lvls, tag=t2,
+                 title="Diff (ICON − E-OBS)", pval=None,
+                 stipple=False, fmt=idx["tick_fmt"], lbl=idx["trend_unit"]),
+        ]
+
+        for p in panels:
+            ax = p["ax"]
+            ax.set_extent(MAP_EXTENT, crs=PC)
+            ax.set_facecolor("#d6e8f2")
+            ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
+            ax.add_feature(cfeature.BORDERS.with_scale("10m"),
+                           linewidth=0.3, edgecolor="0.45", zorder=2)
+
+            fine = interp_display(p["da"])
+            mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
+            arr  = apply_mask(fine.values, mask)
+
+            ax.contourf(fine["lon"].values, fine["lat"].values, arr,
+                        levels=p["lvls"], cmap=p["cmap"], norm=p["norm"],
+                        transform=PC, extend="both", antialiased=True, zorder=3)
+
+            if p["stipple"] and p["pval"] is not None:
+                fine_p = interp_display(p["pval"])
+                mask_p = build_mask(fine_p["lon"].values, fine_p["lat"].values, geom)
+                sig_arr = apply_mask(fine_p.values, mask_p) < 0.05
+                lons2, lats2 = np.meshgrid(fine_p["lon"].values, fine_p["lat"].values)
+                ax.scatter(lons2[sig_arr], lats2[sig_arr], s=0.4, c="k",
+                           alpha=0.25, transform=PC, zorder=5)
+                de_c  = build_mask(p["pval"]["lon"].values, p["pval"]["lat"].values, geom)
+                n_de  = int(de_c.sum())
+                if n_de > 0:
+                    sig_fr = int((de_c & (p["pval"].values < 0.05)).sum()) / n_de * 100
+                    ax.text(0.97, 0.03, f"Sig.: {sig_fr:.0f}%",
+                            transform=ax.transAxes, ha="right", va="bottom",
+                            fontsize=8.5, color="#222222",
+                            bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                                      ec="#aaaaaa", alpha=0.92, lw=0.5))
+
+            ax.add_geometries(gdf.geometry, PC, facecolor="none",
+                              edgecolor="black", linewidth=0.55, zorder=6)
+            ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
+                    ha="left", va="top", fontsize=9, fontweight="bold",
+                    bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
+            ax.set_title(p["title"], fontsize=10.5, fontweight="normal", pad=4)
+            if p.get("row_lbl"):
+                ax.text(-0.22, 0.5, p["row_lbl"], transform=ax.transAxes,
+                        ha="center", va="center", rotation=90,
+                        fontsize=10.5, fontweight="normal")
+            style_axis(ax)
+
+            # Germany-mean annotation
+            de_mask_c = build_mask(p["da"]["lon"].values, p["da"]["lat"].values, geom)
+            if de_mask_c.any():
+                mean_v = float(np.nanmean(p["da"].values[de_mask_c]))
+                sign   = "+" if mean_v >= 0 else ""
+                ax.text(0.03, 0.03, f"DE: {sign}{p['fmt'] % mean_v}",
+                        transform=ax.transAxes, ha="left", va="bottom",
+                        fontsize=8.5, color="#222222",
+                        bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                                  ec="#aaaaaa", alpha=0.92, lw=0.5))
+
+            cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
+            cb = ColorbarBase(cax, cmap=p["cmap"], norm=p["norm"],
+                              boundaries=p["lvls"], ticks=p["lvls"],
+                              orientation="vertical", extend="neither")
+            cb.ax.tick_params(labelsize=8.5, pad=2, length=3, width=0.5)
+            cb.ax.yaxis.set_major_formatter(FormatStrFormatter(p["fmt"]))
+            cb.outline.set_linewidth(0.5)
+            cb.set_label(p["lbl"], fontsize=9.5, labelpad=4)
+
+    fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_grouped_clim_maps(
+    indices, gdf, geom, outfile,
+    suptitle=None,
+):
+    """
+    Multi-row climatology figure: each index gets one row of three panels
+    (E-OBS | ICON-CLM | Diff ICON−E-OBS), stacked vertically.
+
+    E-OBS and ICON-CLM share explicit colorbar levels.
+    The Diff panel uses its own explicit diverging levels.
+
+    Parameters
+    ----------
+    indices : list of dict, each with keys:
+        obs_clim, mod_clim   : xr.DataArray (lat, lon) — mean fields
+        clim_levels          : list — shared explicit levels for E-OBS and ICON
+        clim_colors          : list — colors for the sequential panels
+        clim_diff_levels     : list — explicit diverging levels for Diff
+        clim_label           : str — colorbar label (e.g. "events/summer")
+        tick_fmt             : str — format string for clim colorbar ticks
+        diff_tick_fmt        : str, optional (default "%.2f")
+        row_label            : str — short index name used in panel titles
+    gdf, geom : Germany geometry
+    outfile   : str
+    suptitle  : str, optional
+    """
+    from matplotlib.gridspec import GridSpec
+
+    _DEFAULT_BIAS_COLORS = [
+        "#2166ac", "#4393c3", "#92c5de", "#d1e5f0", "#f7f7f7",
+        "#fddbc7", "#f4a582", "#d6604d", "#b2182b", "#67001f",
+    ]
+
+    n = len(indices)
+    PC   = ccrs.PlateCarree()
+    PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
+
+    fig = plt.figure(figsize=(15.5, 4.8 * n))
+    fig.patch.set_facecolor("white")
+    if suptitle:
+        fig.suptitle(suptitle, fontsize=11, fontweight="normal", y=1.00)
+
+    gs = GridSpec(n, 5, width_ratios=[1, 0.08, 1, 0.08, 1],
+                  left=0.02, right=0.92,
+                  top=0.94 if suptitle else 0.97,
+                  bottom=0.03,
+                  hspace=0.14, wspace=0.0)
+
+    _all_tags = list("abcdefghijklmnopqrstuvwxyz")
+
+    for row, idx in enumerate(indices):
+        obs_clim = idx["obs_clim"]
+        mod_clim = idx["mod_clim"]
+        diff     = (mod_clim - obs_clim).astype(np.float32)
+
+        clim_cols = _interp_colors(idx["clim_colors"], len(idx["clim_levels"]) - 1)
+        cmap_clim = mcolors.ListedColormap(clim_cols)
+        cmap_clim.set_under(clim_cols[0]); cmap_clim.set_over(clim_cols[-1])
+        norm_clim = mcolors.BoundaryNorm(idx["clim_levels"], cmap_clim.N)
+
+        diff_cols = _interp_colors(_DEFAULT_BIAS_COLORS, len(idx["clim_diff_levels"]) - 1)
+        cmap_diff = mcolors.ListedColormap(diff_cols)
+        cmap_diff.set_under(diff_cols[0]); cmap_diff.set_over(diff_cols[-1])
+        norm_diff = mcolors.BoundaryNorm(idx["clim_diff_levels"], cmap_diff.N)
+
+        diff_fmt = idx.get("diff_tick_fmt", "%.2f")
+        clim_lbl = idx.get("clim_label", "")
+        t0, t1, t2 = (f"({_all_tags[row*3+k]})" for k in range(3))
+
+        panels = [
+            dict(ax=fig.add_subplot(gs[row, 0], projection=PROJ),
+                 da=obs_clim, cmap=cmap_clim, norm=norm_clim,
+                 lvls=idx["clim_levels"], tag=t0,
+                 title="E-OBS", row_lbl=idx["row_label"],
+                 fmt=idx["tick_fmt"], lbl=clim_lbl),
+            dict(ax=fig.add_subplot(gs[row, 2], projection=PROJ),
+                 da=mod_clim, cmap=cmap_clim, norm=norm_clim,
+                 lvls=idx["clim_levels"], tag=t1,
+                 title="ICON-CLM",
+                 fmt=idx["tick_fmt"], lbl=clim_lbl),
+            dict(ax=fig.add_subplot(gs[row, 4], projection=PROJ),
+                 da=diff, cmap=cmap_diff, norm=norm_diff,
+                 lvls=idx["clim_diff_levels"], tag=t2,
+                 title="Bias (ICON − E-OBS)",
+                 fmt=diff_fmt, lbl=clim_lbl),
+        ]
+
+        for p in panels:
+            ax = p["ax"]
+            ax.set_extent(MAP_EXTENT, crs=PC)
+            ax.set_facecolor("#d6e8f2")
+            ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
+            ax.add_feature(cfeature.BORDERS.with_scale("10m"),
+                           linewidth=0.3, edgecolor="0.45", zorder=2)
+
+            fine = interp_display(p["da"])
+            mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
+            arr  = apply_mask(fine.values, mask)
+
+            ax.contourf(fine["lon"].values, fine["lat"].values, arr,
+                        levels=p["lvls"], cmap=p["cmap"], norm=p["norm"],
+                        transform=PC, extend="both", antialiased=True, zorder=3)
+
+            ax.add_geometries(gdf.geometry, PC, facecolor="none",
+                              edgecolor="black", linewidth=0.55, zorder=6)
+            ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
+                    ha="left", va="top", fontsize=9, fontweight="bold",
+                    bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
+            ax.set_title(p["title"], fontsize=10.5, fontweight="normal", pad=4)
+            if p.get("row_lbl"):
+                ax.text(-0.22, 0.5, p["row_lbl"], transform=ax.transAxes,
+                        ha="center", va="center", rotation=90,
+                        fontsize=10.5, fontweight="normal")
+            style_axis(ax)
+
+            # Germany-mean annotation
+            de_mask_c = build_mask(p["da"]["lon"].values, p["da"]["lat"].values, geom)
+            if de_mask_c.any():
+                mean_v = float(np.nanmean(p["da"].values[de_mask_c]))
+                sign   = "+" if mean_v >= 0 else ""
+                ax.text(0.03, 0.03, f"DE: {sign}{p['fmt'] % mean_v}",
+                        transform=ax.transAxes, ha="left", va="bottom",
+                        fontsize=8.5, color="#222222",
+                        bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                                  ec="#aaaaaa", alpha=0.92, lw=0.5))
+
+            cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
+            cb = ColorbarBase(cax, cmap=p["cmap"], norm=p["norm"],
+                              boundaries=p["lvls"], ticks=p["lvls"],
+                              orientation="vertical", extend="neither")
+            cb.ax.tick_params(labelsize=8.5, pad=2, length=3, width=0.5)
+            cb.ax.yaxis.set_major_formatter(FormatStrFormatter(p["fmt"]))
+            cb.outline.set_linewidth(0.5)
+            cb.set_label(p["lbl"], fontsize=9.5, labelpad=4)
+
+    fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_three_panel_trend_maps(
+    annual_obs, annual_model,
+    gdf, geom, outfile,
+    obs_levels, obs_colors,
+    trend_unit, tick_fmt="%.2f",
+    suptitle=None,
+    obs_sequential=False,
+):
+    """
+    Three-panel trend map: (a) E-OBS | (b) ICON-CLM | (c) Diff ICON−E-OBS.
+
+    Used for indices with weak/non-significant trends (SDII, SPI) where
+    showing ICON independently allows direct visual comparison of spatial
+    patterns without the noise-amplification problem of the Diff alone.
+    """
+    from matplotlib.gridspec import GridSpec
+
+    PC   = ccrs.PlateCarree()
+    PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
+
+    trend_obs   = compute_trend_maps(annual_obs)
+    trend_model = compute_trend_maps(annual_model)
+    diff        = trend_model["sen_slope"] - trend_obs["sen_slope"]
+
+    def _sc(data_arr, base_colors, base_levels, sequential=False):
+        valid = data_arr[np.isfinite(data_arr)]
+        base_is_div = min(base_levels) < 0 < max(base_levels)
+        if len(valid) < 10:
+            cmap = mcolors.ListedColormap(base_colors)
+            norm = mcolors.BoundaryNorm(base_levels, cmap.N)
+            return list(base_levels), list(base_colors), cmap, norm
+        p2, p98 = np.percentile(valid, 2), np.percentile(valid, 98)
+        is_div = (not sequential) and base_is_div
+        if is_div:
+            ext = max(abs(p2), abs(p98))
+            lo, hi = -ext, ext
+        else:
+            lo, hi = np.percentile(valid, 5), np.percentile(valid, 95)
+        span     = hi - lo
+        raw_step = span / 12
+        mag      = 10.0 ** np.floor(np.log10(max(raw_step, 1e-10)))
+        step     = min([f * mag for f in [1, 2, 5, 10]],
+                       key=lambda s: abs(span / max(s, 1e-10) - 12))
+        if is_div:
+            n_half = max(1, round(hi / step))
+            nice = [round(i * step, 10) for i in range(-n_half, n_half + 1)]
+        else:
+            start = np.floor(lo / step) * step
+            nice = np.round(np.arange(start, hi + step * 0.01, step), 10).tolist()
+        margin = span * 0.08
+        nice = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
+        if len(nice) < 3:
+            nice = list(base_levels)
+        n_new = len(nice) - 1
+        colors = _interp_colors(base_colors, n_new)
+        cmap = mcolors.ListedColormap(colors)
+        cmap.set_under(colors[0]); cmap.set_over(colors[-1])
+        norm = mcolors.BoundaryNorm(nice, cmap.N)
+        return nice, colors, cmap, norm
+
+    # Shared scale for E-OBS + ICON so the visual comparison is direct
+    _combined_t = np.concatenate([trend_obs["sen_slope"].values.ravel(),
+                                  trend_model["sen_slope"].values.ravel()])
+    obs_lvls,  _, cmap_obs,  norm_obs  = _sc(_combined_t, obs_colors, obs_levels, obs_sequential)
+    mod_lvls,  cmap_mod,  norm_mod     = obs_lvls, cmap_obs, norm_obs
+    diff_lvls, _, cmap_diff, norm_diff = _sc(diff.values, DIFF_COLORS, obs_levels)
+
+    fig = plt.figure(figsize=(15.5, 5.2))
+    fig.patch.set_facecolor("white")
+    if suptitle:
+        fig.suptitle(suptitle, fontsize=11, fontweight="normal", y=0.99)
+
+    gs = GridSpec(1, 5, width_ratios=[1, 0.08, 1, 0.08, 1],
+                  left=0.02, right=0.92, top=0.91, bottom=0.04,
+                  wspace=0.0)
+
+    panels = [
+        dict(ax=fig.add_subplot(gs[0, 0], projection=PROJ),
+             da=trend_obs["sen_slope"], cmap=cmap_obs, norm=norm_obs,
+             lvls=obs_lvls, tag="(a)", title="E-OBS",
+             pval=trend_obs["mk_pvalue"], stipple=True,
+             fmt=tick_fmt, lbl=trend_unit),
+        dict(ax=fig.add_subplot(gs[0, 2], projection=PROJ),
+             da=trend_model["sen_slope"], cmap=cmap_mod, norm=norm_mod,
+             lvls=mod_lvls, tag="(b)", title="ICON-CLM",
+             pval=trend_model["mk_pvalue"], stipple=True,
+             fmt=tick_fmt, lbl=trend_unit),
+        dict(ax=fig.add_subplot(gs[0, 4], projection=PROJ),
+             da=diff, cmap=cmap_diff, norm=norm_diff,
+             lvls=diff_lvls, tag="(c)", title="Diff (ICON − E-OBS)",
+             pval=None, stipple=False,
+             fmt=tick_fmt, lbl=trend_unit),
+    ]
+
+    for p in panels:
+        ax = p["ax"]
+        ax.set_extent(MAP_EXTENT, crs=PC)
+        ax.set_facecolor("#d6e8f2")
+        ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
+        ax.add_feature(cfeature.BORDERS.with_scale("10m"),
+                       linewidth=0.3, edgecolor="0.45", zorder=2)
+
+        fine = interp_display(p["da"])
+        mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
+        arr  = apply_mask(fine.values, mask)
+
+        ax.contourf(fine["lon"].values, fine["lat"].values, arr,
+                    levels=p["lvls"], cmap=p["cmap"], norm=p["norm"],
+                    transform=PC, extend="both", antialiased=True, zorder=3)
+
+        if p["stipple"] and p["pval"] is not None:
+            fine_p  = interp_display(p["pval"])
+            mask_p  = build_mask(fine_p["lon"].values, fine_p["lat"].values, geom)
+            sig_arr = apply_mask(fine_p.values, mask_p) < 0.05
+            lons2, lats2 = np.meshgrid(fine_p["lon"].values, fine_p["lat"].values)
+            ax.scatter(lons2[sig_arr], lats2[sig_arr], s=0.4, c="k",
+                       alpha=0.25, transform=PC, zorder=5)
+            de_c  = build_mask(p["pval"]["lon"].values, p["pval"]["lat"].values, geom)
+            n_de  = int(de_c.sum())
+            if n_de > 0:
+                sig_fr = int((de_c & (p["pval"].values < 0.05)).sum()) / n_de * 100
+                ax.text(0.97, 0.03, f"Sig.: {sig_fr:.0f}%",
+                        transform=ax.transAxes, ha="right", va="bottom",
+                        fontsize=8.5, color="#222222",
+                        bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                                  ec="#aaaaaa", alpha=0.92, lw=0.5))
+
+        ax.add_geometries(gdf.geometry, PC, facecolor="none",
+                          edgecolor="black", linewidth=0.55, zorder=6)
+        ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
+                ha="left", va="top", fontsize=9, fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
+        ax.set_title(p["title"], fontsize=10.5, fontweight="normal", pad=4)
+        style_axis(ax)
+
+        # Germany-mean annotation
+        de_mask_c = build_mask(p["da"]["lon"].values, p["da"]["lat"].values, geom)
+        if de_mask_c.any():
+            mean_v = float(np.nanmean(p["da"].values[de_mask_c]))
+            sign   = "+" if mean_v >= 0 else ""
+            ax.text(0.03, 0.03, f"DE: {sign}{p['fmt'] % mean_v}",
+                    transform=ax.transAxes, ha="left", va="bottom",
+                    fontsize=8.5, color="#222222",
+                    bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                              ec="#aaaaaa", alpha=0.92, lw=0.5))
+
+        cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
+        cb = ColorbarBase(cax, cmap=p["cmap"], norm=p["norm"],
+                          boundaries=p["lvls"], ticks=p["lvls"],
+                          orientation="vertical", extend="neither")
+        cb.ax.tick_params(labelsize=8.5, pad=2, length=3, width=0.5)
+        cb.ax.yaxis.set_major_formatter(FormatStrFormatter(p["fmt"]))
+        cb.outline.set_linewidth(0.5)
+        cb.set_label(p["lbl"], fontsize=9.5, labelpad=4)
+
+    fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_index_summary_figure(
+    obs_clim, mod_clim,
+    annual_obs, annual_model,
+    gdf, geom, outfile,
+    clim_levels, clim_colors, clim_label,
+    clim_diff_levels, clim_diff_colors,
+    trend_levels, trend_colors, trend_unit,
+    clim_tick_fmt="%.0f", trend_tick_fmt="%.2f",
+    suptitle=None,
+    obs_sequential=False,
+):
+    """
+    Combined per-index 2-row × 3-column summary figure.
+
+    Row 0: Mean climatology  — (a) E-OBS  |  (b) ICON-CLM  |  (c) Diff
+    Row 1: Theil-Sen trend   — (d) E-OBS  |  (e) ICON-CLM  |  (f) Diff
+
+    E-OBS and ICON share the same colorbar scale (explicit clim_levels for the
+    mean row; pooled auto-scale for the trend row).  Only the Diff panels have
+    their own diverging scale.  Germany-mean annotated bottom-left;
+    significance fraction bottom-right (trend panels only).
+    Rectangular colorbar ends throughout (no triangular extensions).
+    """
+    from matplotlib.gridspec import GridSpec
+
+    PC   = ccrs.PlateCarree()
+    PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
+
+    # ── Compute derived fields ────────────────────────────────────────────────
+    trend_obs   = compute_trend_maps(annual_obs)
+    trend_model = compute_trend_maps(annual_model)
+    trend_diff  = trend_model["sen_slope"] - trend_obs["sen_slope"]
+    clim_diff   = (mod_clim - obs_clim).astype(np.float32)
+
+    # ── Auto-scale helper: returns (levels, cmap, norm) ───────────────────────
+    def _sc(data_arr, base_colors, base_levels, sequential=False):
+        valid = data_arr[np.isfinite(data_arr)]
+        base_is_div = min(base_levels) < 0 < max(base_levels)
+        if len(valid) < 10:
+            cols = _interp_colors(base_colors, len(base_levels) - 1)
+            cmap = mcolors.ListedColormap(cols)
+            cmap.set_under(cols[0]); cmap.set_over(cols[-1])
+            norm = mcolors.BoundaryNorm(base_levels, cmap.N)
+            return list(base_levels), cmap, norm
+        p2, p98 = np.percentile(valid, 2), np.percentile(valid, 98)
+        is_div = (not sequential) and base_is_div
+        if is_div:
+            ext = max(abs(p2), abs(p98))
+            lo, hi = -ext, ext
+        else:
+            lo, hi = np.percentile(valid, 5), np.percentile(valid, 95)
+        span = hi - lo
+        raw_step = span / 12
+        mag  = 10.0 ** np.floor(np.log10(max(raw_step, 1e-10)))
+        step = min([f * mag for f in [1, 2, 5, 10]],
+                   key=lambda s: abs(span / max(s, 1e-10) - 12))
+        if is_div:
+            n_half = max(1, round(hi / step))
+            nice = [round(i * step, 10) for i in range(-n_half, n_half + 1)]
+        else:
+            start = np.floor(lo / step) * step
+            nice = np.round(np.arange(start, hi + step * 0.01, step), 10).tolist()
+        margin = span * 0.08
+        nice = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
+        if len(nice) < 3:
+            nice = list(base_levels)
+        cols = _interp_colors(base_colors, len(nice) - 1)
+        cmap = mcolors.ListedColormap(cols)
+        cmap.set_under(cols[0]); cmap.set_over(cols[-1])
+        norm = mcolors.BoundaryNorm(nice, cmap.N)
+        return nice, cmap, norm
+
+    # ── Climatology colormaps (explicit levels, shared E-OBS / ICON) ──────────
+    clim_cols = _interp_colors(clim_colors, len(clim_levels) - 1)
+    cmap_clim = mcolors.ListedColormap(clim_cols)
+    cmap_clim.set_under(clim_cols[0]); cmap_clim.set_over(clim_cols[-1])
+    norm_clim = mcolors.BoundaryNorm(clim_levels, cmap_clim.N)
+
+    cd_cols = _interp_colors(clim_diff_colors, len(clim_diff_levels) - 1)
+    cmap_cd = mcolors.ListedColormap(cd_cols)
+    cmap_cd.set_under(cd_cols[0]); cmap_cd.set_over(cd_cols[-1])
+    norm_cd = mcolors.BoundaryNorm(clim_diff_levels, cmap_cd.N)
+
+    # ── Trend colormaps (pooled shared scale for E-OBS + ICON) ───────────────
+    _comb_t = np.concatenate([trend_obs["sen_slope"].values.ravel(),
+                               trend_model["sen_slope"].values.ravel()])
+    t_lvls, cmap_t, norm_t = _sc(_comb_t, trend_colors, trend_levels,
+                                  sequential=obs_sequential)
+    dt_lvls, cmap_dt, norm_dt = _sc(trend_diff.values.ravel(), DIFF_COLORS, trend_levels)
+
+    # ── Figure ────────────────────────────────────────────────────────────────
+    fig = plt.figure(figsize=(15.5, 10.2))
+    fig.patch.set_facecolor("white")
+    if suptitle:
+        fig.suptitle(suptitle, fontsize=12, fontweight="normal", y=1.00)
+
+    gs = GridSpec(2, 5, width_ratios=[1, 0.08, 1, 0.08, 1],
+                  left=0.02, right=0.93, top=0.95, bottom=0.03,
+                  hspace=0.10, wspace=0.0)
+
+    panels = [
+        # ── Row 0: climatology ────────────────────────────────────────────
+        dict(ax=fig.add_subplot(gs[0, 0], projection=PROJ),
+             da=obs_clim, cmap=cmap_clim, norm=norm_clim, lvls=clim_levels,
+             tag="(a)", title="E-OBS", pval=None, stipple=False,
+             fmt=clim_tick_fmt, lbl=clim_label),
+        dict(ax=fig.add_subplot(gs[0, 2], projection=PROJ),
+             da=mod_clim, cmap=cmap_clim, norm=norm_clim, lvls=clim_levels,
+             tag="(b)", title="ICON-CLM", pval=None, stipple=False,
+             fmt=clim_tick_fmt, lbl=clim_label),
+        dict(ax=fig.add_subplot(gs[0, 4], projection=PROJ),
+             da=clim_diff, cmap=cmap_cd, norm=norm_cd, lvls=clim_diff_levels,
+             tag="(c)", title="Bias (ICON − E-OBS)", pval=None, stipple=False,
+             fmt="%.2f", lbl=clim_label),
+        # ── Row 1: trend ─────────────────────────────────────────────────
+        dict(ax=fig.add_subplot(gs[1, 0], projection=PROJ),
+             da=trend_obs["sen_slope"], cmap=cmap_t, norm=norm_t, lvls=t_lvls,
+             tag="(d)", title="E-OBS", pval=trend_obs["mk_pvalue"], stipple=True,
+             fmt=trend_tick_fmt, lbl=trend_unit),
+        dict(ax=fig.add_subplot(gs[1, 2], projection=PROJ),
+             da=trend_model["sen_slope"], cmap=cmap_t, norm=norm_t, lvls=t_lvls,
+             tag="(e)", title="ICON-CLM", pval=trend_model["mk_pvalue"], stipple=True,
+             fmt=trend_tick_fmt, lbl=trend_unit),
+        dict(ax=fig.add_subplot(gs[1, 4], projection=PROJ),
+             da=trend_diff, cmap=cmap_dt, norm=norm_dt, lvls=dt_lvls,
+             tag="(f)", title="Diff (ICON − E-OBS)", pval=None, stipple=False,
+             fmt=trend_tick_fmt, lbl=trend_unit),
+    ]
+
+    for p in panels:
+        ax = p["ax"]
+        ax.set_extent(MAP_EXTENT, crs=PC)
+        ax.set_facecolor("#d6e8f2")
+        ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
+        ax.add_feature(cfeature.BORDERS.with_scale("10m"),
+                       linewidth=0.3, edgecolor="0.45", zorder=2)
+
+        fine = interp_display(p["da"])
+        mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
+        arr  = apply_mask(fine.values, mask)
+
+        ax.contourf(fine["lon"].values, fine["lat"].values, arr,
+                    levels=p["lvls"], cmap=p["cmap"], norm=p["norm"],
+                    transform=PC, extend="both", antialiased=True, zorder=3)
+
+        if p["stipple"] and p["pval"] is not None:
+            fine_p  = interp_display(p["pval"])
+            mask_p  = build_mask(fine_p["lon"].values, fine_p["lat"].values, geom)
+            sig_arr = apply_mask(fine_p.values, mask_p) < 0.05
+            lons2, lats2 = np.meshgrid(fine_p["lon"].values, fine_p["lat"].values)
+            ax.scatter(lons2[sig_arr], lats2[sig_arr], s=0.4, c="k",
+                       alpha=0.25, transform=PC, zorder=5)
+            de_c  = build_mask(p["pval"]["lon"].values, p["pval"]["lat"].values, geom)
+            n_de  = int(de_c.sum())
+            if n_de > 0:
+                sig_fr = int((de_c & (p["pval"].values < 0.05)).sum()) / n_de * 100
+                ax.text(0.97, 0.03, f"Sig.: {sig_fr:.0f}%",
+                        transform=ax.transAxes, ha="right", va="bottom",
+                        fontsize=8.5, color="#222222",
+                        bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                                  ec="#aaaaaa", alpha=0.92, lw=0.5))
+
+        ax.add_geometries(gdf.geometry, PC, facecolor="none",
+                          edgecolor="black", linewidth=0.55, zorder=6)
+        ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
+                ha="left", va="top", fontsize=9, fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.75))
+        ax.set_title(p["title"], fontsize=10.5, fontweight="normal", pad=4)
+        style_axis(ax)
+
+        # Germany-mean annotation
+        de_mask_c = build_mask(p["da"]["lon"].values, p["da"]["lat"].values, geom)
+        if de_mask_c.any():
+            mean_v = float(np.nanmean(p["da"].values[de_mask_c]))
+            sign   = "+" if mean_v >= 0 else ""
+            ax.text(0.03, 0.03, f"DE: {sign}{p['fmt'] % mean_v}",
+                    transform=ax.transAxes, ha="left", va="bottom",
+                    fontsize=8.5, color="#222222",
+                    bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                              ec="#aaaaaa", alpha=0.92, lw=0.5))
+
+        # Slim vertical colorbar — rectangular ends
+        cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
+        cb  = ColorbarBase(cax, cmap=p["cmap"], norm=p["norm"],
+                           boundaries=p["lvls"], ticks=_smart_ticks(p["lvls"]),
+                           orientation="vertical", extend="neither")
+        cb.ax.tick_params(labelsize=8.5, pad=2, length=3, width=0.5, direction="out")
+        cb.ax.yaxis.set_major_formatter(FormatStrFormatter(p["fmt"]))
+        cb.outline.set_linewidth(0.5)
+        cb.set_label(p["lbl"], fontsize=9.5, labelpad=4)
+
+    # Row labels on left margin
+    for row_i, row_lbl in enumerate(["Mean (1950–2022)", "Trend / decade"]):
+        fig.text(0.003, 0.74 - row_i * 0.47, row_lbl,
+                 va="center", ha="left", fontsize=8.5, color="0.35",
+                 fontweight="bold", rotation=90)
+
+    fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  NEW: Annual precipitation extreme index functions
+#  All functions operate on a daily JJA DataArray (time, lat, lon).
+#  Output: (year, lat, lon) DataArray with integer year coordinate.
+# ══════════════════════════════════════════════════════════════════════════════
+
+def annual_rx1day(daily_jja):
+    """
+    Rx1day — Maximum 1-day precipitation amount (mm day⁻¹) per JJA season.
+
+    The single highest daily total recorded in June–July–August each year.
+    Rx1day directly captures the intensity of the most extreme single rainfall
+    event in the season; high values are associated with flash-flood hazard
+    and convective precipitation extremes in central Europe.
+
+    Reference: ETCCDI; Frich et al. (2002); Alexander et al. (2006).
+    """
+    return daily_jja.groupby("time.year").max("time").astype(np.float32)
+
+
+def annual_rx5day(daily_jja):
+    """
+    Rx5day — Maximum consecutive 5-day precipitation amount (mm) per JJA season.
+
+    The maximum sum of any five consecutive days within JJA.  This multi-day
+    accumulation metric is closely linked to basin-scale hydrological flooding
+    risk: a prolonged heavy-rain event saturates catchments and can produce
+    river floods even when individual days do not exceed flash-flood thresholds.
+
+    Implementation: sliding window of width 5 shifted one day at a time;
+    maximum over all windows in the season.
+
+    Reference: ETCCDI; Zolina et al. (2014).
+    """
+    years = np.unique(daily_jja["time"].dt.year.values).astype(int)
+    lat   = daily_jja["lat"].values
+    lon   = daily_jja["lon"].values
+    out   = np.full((len(years), len(lat), len(lon)), np.nan, dtype=np.float32)
+
+    for yi, yr in enumerate(years):
+        season = daily_jja.sel(time=str(yr)).values   # (T, lat, lon)
+        T = season.shape[0]
+        if T < 5:
+            continue
+        # Compute all 5-day rolling sums efficiently via cumulative sum
+        # roll_sums[k] = season[k] + … + season[k+4]  for k = 0 … T-5
+        roll_sums = np.zeros((T - 4, len(lat), len(lon)), dtype=np.float32)
+        for k in range(5):
+            roll_sums += season[k: T - 4 + k]
+        out[yi] = roll_sums.max(axis=0)
+
+    return xr.DataArray(
+        out,
+        coords={"year": years, "lat": lat, "lon": lon},
+        dims=("year", "lat", "lon"),
+        name="Rx5day",
+    )
+
+
+def annual_r10mm(daily_jja):
+    """
+    R10mm — Count of heavy precipitation days (P ≥ 10 mm day⁻¹) per JJA season.
+
+    The number of days per summer season with daily precipitation at or above
+    10 mm.  This threshold broadly marks the onset of rapid surface runoff in
+    most soil types and is among the most widely cited ETCCDI indices in
+    European precipitation studies.
+
+    Reference: ETCCDI; Donat et al. (2013).
+    """
+    return (
+        (daily_jja >= 10.0)
+        .astype(np.float32)
+        .groupby("time.year")
+        .sum("time")
+    )
+
+
+def annual_r20mm(daily_jja):
+    """
+    R20mm — Count of very heavy precipitation days (P ≥ 20 mm day⁻¹) per JJA season.
+
+    The number of days per summer season with daily precipitation at or above
+    20 mm.  This higher threshold is broadly associated with urban flash-flood
+    triggering in Germany and targets the most intense convective rainfall events.
+
+    Reference: ETCCDI; Zeder & Fischer (2020).
+    """
+    return (
+        (daily_jja >= 20.0)
+        .astype(np.float32)
+        .groupby("time.year")
+        .sum("time")
+    )
+
+
+def annual_sdii(daily_jja, wet_min=WET_DAY_MIN):
+    """
+    SDII — Simple Daily Intensity Index (mm wet-day⁻¹) per JJA season.
+
+    Ratio of total wet-day precipitation to the number of wet days (P ≥ 1 mm).
+    SDII isolates changes in precipitation *intensity* from changes in
+    *frequency*, which is critical for understanding whether Germany's summer
+    precipitation is becoming more or less intense per event independent of
+    whether events become more or less frequent.
+
+    Reference: ETCCDI; Zolina et al. (2010).
+    """
+    wet_mask  = daily_jja >= wet_min
+    wet_total = (
+        daily_jja.where(wet_mask)
+        .groupby("time.year")
+        .sum("time", skipna=True)
+    )
+    wet_count = (
+        wet_mask.astype(np.float32)
+        .groupby("time.year")
+        .sum("time")
+    )
+    # Avoid division by zero for grid cells / years with no wet days
+    sdii = wet_total / wet_count.where(wet_count > 0)
+    return sdii.astype(np.float32)
+
+
+def annual_spi_jja(daily_jja, ref_start=REF_START, ref_end=REF_END):
+    """
+    SPI — Standardised Precipitation Index computed on seasonal JJA totals.
+
+    The gamma distribution is fitted to the 1961-1990 reference-period seasonal
+    (JJA) precipitation totals at each grid cell.  All years are then transformed
+    via the fitted CDF to a standard-normal variate (SPI).
+
+    SPI > 0: wetter than the 1961-1990 median; SPI < 0: drier.
+    SPI ≤ −1 is conventionally 'moderately dry'; SPI ≤ −1.5 'severely dry'.
+    A positive trend means the summer is getting wetter relative to 1961-1990.
+
+    Mixed-distribution (p0): the probability of zero total precipitation in
+    a season is treated explicitly, so arid grid cells with occasional dry
+    summers are handled correctly.
+
+    Reference: McKee et al. (1993); Lloyd-Hughes & Saunders (2002).
+    """
+    from scipy.stats import gamma as gamma_dist, norm as norm_dist
+
+    seasonal = daily_jja.groupby("time.year").sum("time").astype(np.float32)
+    years    = seasonal["year"].values
+    lat      = seasonal["lat"].values
+    lon      = seasonal["lon"].values
+    all_arr  = seasonal.values               # (year, lat, lon)
+
+    ref_mask = (years >= int(ref_start)) & (years <= int(ref_end))
+    ref_arr  = all_arr[ref_mask]             # (n_ref, lat, lon)
+
+    out = np.full_like(all_arr, np.nan, dtype=np.float32)
+
+    for i in range(len(lat)):
+        for j in range(len(lon)):
+            ref_col = ref_arr[:, i, j]
+            ok_ref  = np.isfinite(ref_col) & (ref_col >= 0)
+            if ok_ref.sum() < 10:
+                continue
+            rv  = ref_col[ok_ref]
+            p0  = float(np.sum(rv == 0)) / len(rv)
+            pos = rv[rv > 0]
+            if len(pos) < 5:
+                continue
+            try:
+                a, _loc, scale = gamma_dist.fit(pos, floc=0)
+                all_col = all_arr[:, i, j]
+                for yi, v in enumerate(all_col):
+                    if not np.isfinite(v) or v < 0:
+                        continue
+                    if v == 0:
+                        cdf_v = p0 * 0.5
+                    else:
+                        cdf_v = p0 + (1.0 - p0) * float(
+                            gamma_dist.cdf(v, a, loc=0, scale=scale))
+                    cdf_v = float(np.clip(cdf_v, 1e-6, 1.0 - 1e-6))
+                    out[yi, i, j] = float(norm_dist.ppf(cdf_v))
+            except Exception:
+                pass
+
+    return xr.DataArray(
+        out, coords=seasonal.coords, dims=seasonal.dims, name="SPI"
+    )
+
+
+def annual_cwd(daily_jja, wet_min=WET_DAY_MIN):
+    """
+    CWD — Maximum consecutive wet days (P ≥ 1 mm day⁻¹) per JJA season.
+
+    The length of the longest unbroken sequence of wet days in JJA.  CWD
+    complements CDD: while CDD captures drought duration, CWD quantifies
+    sustained rainfall episodes that saturate soils and significantly elevate
+    flood risk through cumulative antecedent moisture, even when individual
+    daily totals remain moderate.
+
+    Implementation: run-length encoding via np.diff on the binary wet-day mask,
+    identical in structure to annual_cdd for consistency.
+
+    Reference: ETCCDI; Moberg & Jones (2005).
+    """
+    years = np.unique(daily_jja["time"].dt.year.values).astype(int)
+    lat   = daily_jja["lat"].values
+    lon   = daily_jja["lon"].values
+    out   = np.zeros((len(years), len(lat), len(lon)), dtype=np.float32)
+
+    for yi, yr in enumerate(years):
+        wet = (daily_jja.sel(time=str(yr)).values >= wet_min).astype(np.int8)
+        # wet shape: (time, lat, lon)
+        for i in range(len(lat)):
+            for j in range(len(lon)):
+                d = wet[:, i, j]
+                if d.sum() == 0:
+                    out[yi, i, j] = 0.0
+                    continue
+                # Run-length encoding: find start and end indices of wet spells
+                padded = np.concatenate([[0], d, [0]])
+                diff   = np.diff(padded)
+                starts = np.where(diff ==  1)[0]
+                ends   = np.where(diff == -1)[0]
+                out[yi, i, j] = float(np.max(ends - starts))
+
+    return xr.DataArray(
+        out,
+        coords={"year": years, "lat": lat, "lon": lon},
+        dims=("year", "lat", "lon"),
+        name="CWD",
+    )
+
+
+# ── map axis styling ──────────────────────────────────────────────────────────
+def style_axis(ax):
+    """Apply cartographic formatting to a Cartopy GeoAxes (Germany domain)."""
+    gl = ax.gridlines(
+        crs=ccrs.PlateCarree(), draw_labels=True,
+        linewidth=0.35, color="0.55", alpha=0.55, linestyle=":", zorder=0,
+        xlocs=np.arange(6, 16, 3), ylocs=np.arange(48, 56, 2),
+    )
+    gl.top_labels   = False
+    gl.right_labels = False
+    gl.xlabel_style = {"size": 9}
+    gl.ylabel_style = {"size": 9}
+    for sp in ax.spines.values():
+        sp.set_linewidth(0.65)
+
+
+# ── paired trend map figure (E-OBS vs ICON-CLM) ───────────────────────────────
+def plot_paired_trend_maps(
+    obs_slope, model_slope,
+    obs_pval,  model_pval,
+    gdf, geom,
+    outfile, levels, colors,
+    cbar_label,
+    title_obs="E-OBS", title_model="ICON-CLM",
+    tick_fmt="%.2f",
+    suptitle=None,
+    force_diverging=False,
+    add_bias=False,
+):
+    """
+    Publication-quality trend map: (a) E-OBS, (b) ICON-CLM, and optionally
+    (c) Bias (ICON − E-OBS).
+
+    Each panel has its own slim vertical colorbar.  Panels (a) and (b) share
+    one scale (pooled data) so the model–obs comparison is valid; the optional
+    bias panel (c) gets its own symmetric diverging scale.  Significance
+    stippling and domain-mean are annotated on the two data panels.
+
+    add_bias=True appends the (ICON − E-OBS) difference as a third panel.
+    """
+    from matplotlib.gridspec import GridSpec
+
+    PC   = ccrs.PlateCarree()
+    PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
+
+    levels_base = list(levels)
+    colors_base = list(colors)
+
+    # Shared scale for the two data panels — pool both so the comparison is valid
+    combined = np.concatenate([obs_slope.values.ravel(), model_slope.values.ravel()])
+    lvls_shared, _, cmap_shared, norm_shared = _auto_scale_palette(
+        combined, levels_base, colors_base, force_diverging=force_diverging)
+
+    # ── Panel specifications ──────────────────────────────────────────────────
+    panels = [
+        dict(da=obs_slope,   pval=obs_pval,   title=title_obs,   tag="(a)",
+             cmap=cmap_shared, norm=norm_shared, lvls=lvls_shared,
+             stipple=True,  cbar_lbl=cbar_label, fmt=tick_fmt),
+        dict(da=model_slope, pval=model_pval, title=title_model, tag="(b)",
+             cmap=cmap_shared, norm=norm_shared, lvls=lvls_shared,
+             stipple=True,  cbar_lbl=cbar_label, fmt=tick_fmt),
+    ]
+    if add_bias:
+        diff = model_slope - obs_slope
+        bias_lvls, _, bias_cmap, bias_norm = _auto_scale_palette(
+            diff.values, levels_base, colors_base, force_diverging=True)
+        panels.append(
+            dict(da=diff, pval=None, title="Diff (ICON − E-OBS)", tag="(c)",
+                 cmap=bias_cmap, norm=bias_norm, lvls=bias_lvls,
+                 stipple=False, cbar_lbl=cbar_label, fmt=tick_fmt))
+
+    n_panels = len(panels)
+
+    # ── Figure layout ─────────────────────────────────────────────────────────
+    if n_panels == 3:
+        fig = plt.figure(figsize=(15.0, 5.3))
+        gs  = GridSpec(1, 5, width_ratios=[1, 0.12, 1, 0.12, 1],
+                       left=0.03, right=0.95, top=0.91, bottom=0.04, wspace=0.0)
+        cols = [0, 2, 4]
+    else:
+        fig = plt.figure(figsize=(10.5, 5.5))
+        gs  = GridSpec(1, 3, width_ratios=[1, 0.08, 1],
+                       left=0.03, right=0.93, top=0.91, bottom=0.04, wspace=0.0)
+        cols = [0, 2]
+
+    fig.patch.set_facecolor("white")
+    if suptitle:
+        fig.suptitle(suptitle, fontsize=11, fontweight="normal", y=0.99)
+
+    for p, col in zip(panels, cols):
+        da   = p["da"]
+        cmap, norm, lvls = p["cmap"], p["norm"], p["lvls"]
+
+        ax = fig.add_subplot(gs[0, col], projection=PROJ)
+        ax.set_extent(MAP_EXTENT, crs=PC)
+        ax.set_facecolor("#d6e8f2")
+        ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
+        ax.add_feature(cfeature.BORDERS.with_scale("10m"),
+                       linewidth=0.3, edgecolor="0.45", zorder=2)
+
+        fine    = interp_display(da)
+        de_mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
+        arr     = apply_mask(fine.values, de_mask)
+
+        ax.contourf(
+            fine["lon"].values, fine["lat"].values, arr,
+            levels=lvls, cmap=cmap, norm=norm,
+            transform=PC, extend="both", antialiased=True, zorder=3,
+        )
+        ax.add_geometries(gdf.geometry, PC, facecolor="none",
+                          edgecolor="white",   linewidth=1.8, zorder=5)
+        ax.add_geometries(gdf.geometry, PC, facecolor="none",
+                          edgecolor="#1a1a1a", linewidth=0.70, zorder=6)
+
+        de_mask_c = build_mask(da["lon"].values, da["lat"].values, geom)
+
+        # Significance stippling — data panels only (not the bias panel)
+        if p["stipple"]:
+            sig_mask   = p["pval"].values < ALPHA
+            lo2d, la2d = np.meshgrid(da["lon"].values, da["lat"].values)
+            stip_mask  = sig_mask & de_mask_c
+            ax.scatter(lo2d[stip_mask], la2d[stip_mask],
+                       s=2.0, c="#1a1a1a", alpha=0.40, marker=".", zorder=7,
+                       rasterized=True, transform=PC)
+            n_de     = int(de_mask_c.sum())
+            sig_frac = stip_mask.sum() / n_de * 100 if n_de > 0 else 0.0
+            ax.text(0.97, 0.03, f"Sig. area: {sig_frac:.0f}%",
+                    transform=ax.transAxes, ha="right", va="bottom",
+                    fontsize=8.5, color="#222222",
+                    bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                              ec="#aaaaaa", alpha=0.92, lw=0.5))
+
+        ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
+                ha="left", va="top", fontsize=11, fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.22", fc="white",
+                          ec="#888888", alpha=0.92, lw=0.6))
+        ax.set_title(p["title"], fontsize=11, fontweight="normal", pad=6)
+
+        mean_v = float(np.nanmean(da.values[de_mask_c]))
+        sign   = "+" if mean_v >= 0 else ""
+        ax.text(0.03, 0.03, f"Mean: {sign}{mean_v:.3f}",
+                transform=ax.transAxes, ha="left", va="bottom",
+                fontsize=8.5, color="#222222",
+                bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                          ec="#aaaaaa", alpha=0.92, lw=0.5))
+
+        style_axis(ax)
+
+        # Slim vertical colorbar — all boundary ticks labeled, rectangular ends
+        cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
+        cb  = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
+                           ticks=_smart_ticks(lvls), orientation="vertical",
+                           extend="neither")
+        cb.ax.tick_params(labelsize=8.5, pad=2, length=3, width=0.5, direction="out")
+        cb.ax.yaxis.set_major_formatter(FormatStrFormatter(p["fmt"]))
+        cb.outline.set_linewidth(0.5)
+        cb.set_label(p["cbar_lbl"], fontsize=9.5, labelpad=4, fontweight="normal")
+
+    fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ── E-OBS trend + diff supplementary figure ───────────────────────────────────
+def plot_obs_bias_maps(
+    obs_slope, model_slope,
+    obs_pval, model_pval,
+    gdf, geom,
+    outfile,
+    obs_levels, obs_colors,
+    cbar_label,
+    title_obs="E-OBS", title_diff="Diff (ICON − E-OBS)",
+    tick_fmt="%.2f",
+    suptitle=None,
+    obs_sequential=True,
+    diff_colors=None, diff_levels=None,
+):
+    """
+    Supplementary two-panel figure: (a) E-OBS trend with significance stippling,
+    (b) ICON − E-OBS arithmetic difference (no significance).
+
+    Both panels use the same base color palette (obs_colors), each independently
+    auto-scaled to its own data range.
+    """
+    from matplotlib.ticker import MaxNLocator
+
+    PC   = ccrs.PlateCarree()
+    PROJ = ccrs.LambertConformal(central_longitude=10, central_latitude=51)
+
+    obs_colors_orig  = list(obs_colors)
+    diff_colors_orig = list(diff_colors) if diff_colors is not None else obs_colors_orig
+    diff_levels_base = list(diff_levels) if diff_levels is not None else obs_levels
+
+    def _auto_scale(data_arr, base_colors, base_levels, obs_panel=False):
+        """Auto-scale levels and resample base_colors to data range.
+
+        obs_panel=True forces sequential (never diverging) so the E-OBS
+        panel always shows only the dominant-sign half of the palette.
+        """
+        valid       = data_arr[np.isfinite(data_arr)]
+        base_is_div = min(base_levels) < 0 < max(base_levels)
+        if len(valid) <= 10:
+            cmap = mcolors.ListedColormap(base_colors)
+            cmap.set_under(base_colors[0])
+            cmap.set_over(base_colors[-1])
+            norm = mcolors.BoundaryNorm(base_levels, cmap.N)
+            return list(base_levels), list(base_colors), cmap, norm
+        p2, p98  = np.percentile(valid, 2), np.percentile(valid, 98)
+        med_val  = float(np.median(valid))
+        # Diff panel: diverging whenever the base palette is diverging (obs_panel never diverges)
+        is_div   = (not obs_panel) and base_is_div
+        n_target = 14 if is_div else 12
+        if is_div:
+            ext    = max(abs(p2), abs(p98))
+            lo, hi = -ext, ext
+        else:
+            lo = np.percentile(valid, 5)
+            hi = np.percentile(valid, 95)
+            # Negative-dominant: extend one step above 0 so colorbar doesn't stop abruptly
+            if base_is_div and med_val < 0:
+                rough_mag = 10.0 ** np.floor(np.log10(abs(lo) / n_target))
+                step0     = min([f * rough_mag for f in [1, 2, 5, 10]],
+                                key=lambda s: abs(abs(lo) / s - n_target))
+                hi = step0
+        span     = hi - lo
+        raw_step = span / n_target
+        mag      = 10.0 ** np.floor(np.log10(raw_step))
+        step     = min([f * mag for f in [1, 2, 5, 10]],
+                       key=lambda s: abs(span / s - n_target))
+        if is_div:
+            n_half = max(1, round(hi / step))
+            if n_half % 2 != 0:
+                n_half += 1          # force even → zero at even index → always labeled
+            nice   = [round(i * step, 10) for i in range(-n_half, n_half + 1)]
+        else:
+            start  = np.floor(lo / step) * step
+            nice   = np.round(np.arange(start, hi + step * 0.01, step), 10).tolist()
+            if lo > 0:
+                nice = [t for t in nice if t > 0]
+        margin = span * 0.08
+        nice   = [float(t) for t in nice if (lo - margin) <= t <= (hi + margin)]
+        if len(nice) >= 3:
+            n_new  = len(nice) - 1
+            if base_is_div and not is_div:
+                center = len(base_colors) // 2
+                sub    = base_colors[:center + 1] if med_val < 0 else base_colors[center:]
+                colors = _interp_colors(sub, n_new)
+            else:
+                colors = _interp_colors(base_colors, n_new)
+            levels = nice
+        else:
+            colors = list(base_colors)
+            levels = list(base_levels)
+        cmap = mcolors.ListedColormap(colors)
+        cmap.set_under(colors[0])
+        cmap.set_over(colors[-1])
+        norm = mcolors.BoundaryNorm(levels, cmap.N)
+        return levels, colors, cmap, norm
+
+    diff = model_slope - obs_slope
+
+    # E-OBS: sequential when obs_sequential=True (temperature); full diverging otherwise (precipitation)
+    # Diff: uses diff_colors/diff_levels when provided (e.g. TEMP_COLORS for precipitation Diff)
+    obs_lvls,  _, cmap_obs,  norm_obs  = _auto_scale(
+        obs_slope.values, obs_colors_orig, obs_levels, obs_panel=obs_sequential)
+    diff_lvls, _, cmap_diff, norm_diff = _auto_scale(
+        diff.values, diff_colors_orig, diff_levels_base)
+
+    # ── Figure layout ─────────────────────────────────────────────────────────
+    from matplotlib.gridspec import GridSpec
+    fig = plt.figure(figsize=(10.5, 5.2))
+    fig.patch.set_facecolor("white")
+    if suptitle:
+        fig.suptitle(suptitle, fontsize=11, fontweight="normal", y=0.99)
+
+    gs  = GridSpec(1, 3, width_ratios=[1, 0.08, 1],
+                   left=0.03, right=0.93, top=0.91, bottom=0.04,
+                   wspace=0.0)
+    axs = [fig.add_subplot(gs[0, 0], projection=PROJ),
+           fig.add_subplot(gs[0, 2], projection=PROJ)]
+
+    panels = [
+        dict(ax=axs[0], da=obs_slope,
+             cmap=cmap_obs,  norm=norm_obs,  lvls=obs_lvls,
+             title=title_obs,  cbar_lbl=cbar_label,
+             stipple=True,  pval=obs_pval, tag="(a)"),
+        dict(ax=axs[1], da=diff,
+             cmap=cmap_diff, norm=norm_diff, lvls=diff_lvls,
+             title=title_diff, cbar_lbl=cbar_label,   # no "Diff" prefix — title already says it
+             stipple=False, pval=None,     tag="(b)"),
+    ]
+
+    for p in panels:
+        ax  = p["ax"]
+        da  = p["da"]
+        cmap, norm, lvls = p["cmap"], p["norm"], p["lvls"]
+
+        ax.set_extent(MAP_EXTENT, crs=PC)
+        ax.set_facecolor("#d6e8f2")
+        ax.add_feature(cfeature.LAND.with_scale("10m"), facecolor="#ebebeb", zorder=1)
+        ax.add_feature(cfeature.BORDERS.with_scale("10m"),
+                       linewidth=0.3, edgecolor="0.45", zorder=2)
+
+        fine    = interp_display(da)
+        de_mask = build_mask(fine["lon"].values, fine["lat"].values, geom)
+        arr     = apply_mask(fine.values, de_mask)
+
+        ax.contourf(
+            fine["lon"].values, fine["lat"].values, arr,
+            levels=lvls, cmap=cmap, norm=norm,
+            transform=PC, extend="both", antialiased=True, zorder=3,
+        )
+        ax.add_geometries(gdf.geometry, PC, facecolor="none",
+                          edgecolor="white",   linewidth=1.8, zorder=5)
+        ax.add_geometries(gdf.geometry, PC, facecolor="none",
+                          edgecolor="#1a1a1a", linewidth=0.70, zorder=6)
+
+        de_mask_c = build_mask(da["lon"].values, da["lat"].values, geom)
+
+        # Significance stippling — E-OBS panel only
+        if p["stipple"]:
+            sig_mask  = p["pval"].values < ALPHA
+            stip_mask = sig_mask & de_mask_c
+            lo2d, la2d = np.meshgrid(da["lon"].values, da["lat"].values)
+            ax.scatter(lo2d[stip_mask], la2d[stip_mask],
+                       s=2.0, c="#1a1a1a", alpha=0.40, marker=".", zorder=7,
+                       rasterized=True, transform=PC)
+            n_de     = int(de_mask_c.sum())
+            sig_frac = stip_mask.sum() / n_de * 100 if n_de > 0 else 0.0
+            ax.text(0.97, 0.03, f"Sig. area: {sig_frac:.0f}%",
+                    transform=ax.transAxes, ha="right", va="bottom",
+                    fontsize=8.5, color="#222222",
+                    bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                              ec="#aaaaaa", alpha=0.92, lw=0.5))
+
+        ax.text(0.03, 0.97, p["tag"], transform=ax.transAxes,
+                ha="left", va="top", fontsize=11, fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.22", fc="white",
+                          ec="#888888", alpha=0.92, lw=0.6))
+        ax.set_title(p["title"], fontsize=11, fontweight="normal", pad=6)
+
+        mean_v = float(np.nanmean(da.values[de_mask_c]))
+        sign   = "+" if mean_v >= 0 else ""
+        ax.text(0.03, 0.03, f"Mean: {sign}{mean_v:.3f}",
+                transform=ax.transAxes, ha="left", va="bottom",
+                fontsize=8.5, color="#222222",
+                bbox=dict(boxstyle="round,pad=0.20", fc="white",
+                          ec="#aaaaaa", alpha=0.92, lw=0.5))
+
+        style_axis(ax)
+
+        # Slim vertical colorbar — rectangular ends, all boundary ticks labeled
+        cax = ax.inset_axes([1.015, 0.0, 0.035, 1.0])
+
+        cb = ColorbarBase(cax, cmap=cmap, norm=norm, boundaries=lvls,
+                          ticks=_smart_ticks(lvls), orientation="vertical", extend="neither")
+        cb.ax.tick_params(labelsize=8.5, pad=2, length=3, width=0.5, direction="out")
+        cb.ax.yaxis.set_major_formatter(FormatStrFormatter(tick_fmt))
+        cb.outline.set_linewidth(0.5)
+        cb.set_label(p["cbar_lbl"], fontsize=9.5, labelpad=4, fontweight="normal")
+
+    fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_germany_series(
+    obs_series, model_series,
+    obs_anom,   model_anom,
+    ylabel, title, outfile,
+    ylabel_anom=None,
+    obs_stats=None, model_stats=None,
+    simple=False,
+):
+    """
+    Germany-average time series figure.
+
+    simple=False (default, script 1): two-panel layout —
+        top: annual scatter + 5-yr / 10-yr rolling means;
+        bottom: sign-coloured anomaly bars.
+
+    simple=True (script 2 extremes): single panel —
+        annual time series lines for E-OBS and ICON-CLM plus
+        Theil-Sen trend lines.  No rolling means, no anomalies.
+    """
+    from matplotlib.lines import Line2D
+
+    OBS_COL = "#000000"   # black (E-OBS / observations)
+    MOD_COL = "#e41a1c"   # red (ICON-CLM / model)
+
+    years    = obs_series["year"].values.astype(int)
+    obs_vals = obs_series.values.astype(float)
+    mod_vals = model_series.values.astype(float)
+
+    # ── Simple single-panel version (script 2) ────────────────────────────────
+    if simple:
+        fig, ax = plt.subplots(figsize=(10, 4.5))
+        fig.patch.set_facecolor("white")
+        if title:
+            fig.suptitle(title, fontsize=10, fontweight="normal", y=1.01)
+
+        ax.plot(years, obs_vals, color=OBS_COL, lw=1.0, alpha=0.65,
+                label="E-OBS", zorder=3)
+        ax.plot(years, mod_vals, color=MOD_COL, lw=1.0, alpha=0.65,
+                label="ICON-CLM", zorder=3)
+
+        # Theil-Sen trend lines
+        for vals, col, stats, lbl in [
+            (obs_vals, OBS_COL, obs_stats,   "E-OBS trend"),
+            (mod_vals, MOD_COL, model_stats, "ICON-CLM trend"),
+        ]:
+            if stats is not None:
+                slope_yr  = stats["sen_slope_decade"] / 10.0
+                valid     = np.isfinite(vals)
+                mean_x    = np.mean(years[valid])
+                mean_y    = np.mean(vals[valid])
+                intercept = mean_y - slope_yr * mean_x
+                trend     = intercept + slope_yr * years
+                slope_str = f"{slope_yr * 10:+.3f} {ylabel}/decade"
+                ax.plot(years, trend, "--", color=col, lw=2.0, alpha=0.95,
+                        label=f"{lbl}: {slope_str}", zorder=4)
+
+        # ── Key event annotations ──────────────────────────────────────────
+        _EVENTS = {
+            2003: "2003",
+            2006: "2006",
+            2018: "2018",
+            2019: "2019",
+        }
+        ymin, ymax = ax.get_ylim()
+        for yr, lbl in _EVENTS.items():
+            if years[0] <= yr <= years[-1]:
+                ax.axvline(yr, color="#555555", lw=0.8, ls=":", alpha=0.70, zorder=2)
+                ax.text(yr + 0.3, ymax - (ymax - ymin) * 0.04, lbl,
+                        fontsize=8, color="#444444", va="top", ha="left",
+                        rotation=90)
+
+        ax.set_xlabel("Year", fontsize=10.5)
+        ax.set_ylabel(ylabel, fontsize=10.5)
+        ax.tick_params(labelsize=9.5)
+        ax.legend(fontsize=8, frameon=True, framealpha=0.88,
+                  edgecolor="0.70", loc="upper left")
+        ax.grid(True, linestyle="--", linewidth=0.35, alpha=0.55, zorder=0)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines[["left", "bottom"]].set_linewidth(0.7)
+
+        plt.tight_layout()
+        fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
+        plt.close(fig)
+        return
+
+    # ── Full two-panel version (script 1) ─────────────────────────────────────
+    fig, (ax1, ax2) = plt.subplots(
+        2, 1, figsize=(11, 7.0), sharex=True,
+        gridspec_kw={"hspace": 0.05, "height_ratios": [1.45, 1]},
+    )
+    fig.patch.set_facecolor("white")
+    if title:
+        fig.suptitle(title, fontsize=11, fontweight="normal", y=0.98)
+
+    for vals, col, lbl in [
+        (obs_vals, OBS_COL, "E-OBS"),
+        (mod_vals, MOD_COL, "ICON-CLM"),
+    ]:
+        s = pd.Series(vals, index=years, dtype=float)
+        ax1.scatter(years, vals, color=col, s=9, alpha=0.30, zorder=2, linewidths=0)
+        rm5  = s.rolling(5,  center=True, min_periods=3).mean()
+        ax1.plot(years, rm5.values,  "--", color=col, lw=1.5, alpha=0.80, zorder=3)
+        rm10 = s.rolling(10, center=True, min_periods=5).mean()
+        ax1.plot(years, rm10.values, "-",  color=col, lw=2.2, alpha=0.92,
+                 label=lbl, zorder=4)
+
+    custom_lines = [
+        Line2D([0], [0], color="0.40", lw=1.5, ls="--", label="5-yr mean"),
+        Line2D([0], [0], color="0.40", lw=2.2, ls="-",  label="10-yr mean"),
+        Line2D([0], [0], color="0.40", marker="o", ms=4,
+               ls="none", alpha=0.4, label="Annual"),
+    ]
+    ax1.legend(
+        handles=list(ax1.get_legend_handles_labels()[0]) + custom_lines,
+        fontsize=9, frameon=True, framealpha=0.85, edgecolor="0.70",
+        loc="lower right", ncol=2,
+    )
+    ax1.set_ylabel(ylabel, fontsize=10.5)
+    ax1.tick_params(labelsize=9.5)
+    ax1.grid(True, linestyle="--", linewidth=0.35, alpha=0.55, zorder=0)
+    ax1.spines["top"].set_visible(False)
+    ax1.spines["right"].set_visible(False)
+    ax1.spines[["left", "bottom"]].set_linewidth(0.7)
+    ax1.text(0.005, 0.98, "(a)", transform=ax1.transAxes,
+             fontsize=10, fontweight="bold", va="top")
+
+    anom_yrs = obs_anom["year"].values.astype(int)
+    obs_a    = obs_anom.values.astype(float)
+    mod_a    = model_anom.values.astype(float)
+
+    ax2.axvspan(1991, 2020, color="#f0f0f0", zorder=0)
+    ax2.text(2005.5, 0, "1991–2020\nreference", ha="center", va="bottom",
+             fontsize=8, color="0.55", style="italic", zorder=1)
+    ax2.axhline(0, color="0.35", lw=0.80, zorder=1)
+
+    bar_w   = 0.42
+    obs_pos = np.where(obs_a >= 0, obs_a, 0.0)
+    obs_neg = np.where(obs_a < 0,  obs_a, 0.0)
+    ax2.bar(anom_yrs - bar_w / 2, obs_pos, bar_w,
+            color="#d73027", alpha=0.78, label="E-OBS +anom", zorder=2)
+    ax2.bar(anom_yrs - bar_w / 2, obs_neg, bar_w,
+            color="#4575b4", alpha=0.78, label="E-OBS −anom", zorder=2)
+    ax2.plot(anom_yrs, mod_a, color="0.25", lw=1.0,
+             drawstyle="steps-mid", label="ICON-CLM", zorder=4)
+
+    s_obs_a  = pd.Series(obs_a, index=anom_yrs, dtype=float)
+    rm10_obs = s_obs_a.rolling(10, center=True, min_periods=5).mean()
+    ax2.plot(anom_yrs, rm10_obs.values, "-", color=OBS_COL, lw=2.0,
+             label="E-OBS 10-yr", zorder=5, alpha=0.90)
+
+    ylabel_anom = ylabel_anom or f"Anomaly [{ylabel}]"
+    ax2.set_ylabel(ylabel_anom, fontsize=10.5)
+    ax2.set_xlabel("Year", fontsize=10.5)
+    ax2.legend(fontsize=9, frameon=True, framealpha=0.85, edgecolor="0.70",
+               loc="lower left", ncol=2)
+    ax2.tick_params(labelsize=9.5)
+    ax2.grid(True, linestyle="--", linewidth=0.35, alpha=0.55, zorder=0)
+    ax2.spines["top"].set_visible(False)
+    ax2.spines["right"].set_visible(False)
+    ax2.spines[["left", "bottom"]].set_linewidth(0.7)
+    ax2.text(0.005, 0.98, "(b)", transform=ax2.transAxes,
+             fontsize=10, fontweight="bold", va="top")
+    ax2.text(0.79, 0.96, "grey band = 1991-2020 ref. period",
+             transform=ax2.transAxes, fontsize=8, color="0.55", va="top")
+
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  NEW: Taylor diagram
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Canonical short labels for the summary figures (Taylor diagram, heatmap)
+INDEX_SHORT_NAMES = {
+    "T90p_exceedance_days": "T90p",
+    "Heatwave_number":      "HWN",
+    "Heatwave_duration":    "HWD",
+    "SDII":                 "SDII",
+    "CDD":                  "CDD",
+    "SPI":                  "SPI",
+}
+
+# Unicode superscript characters → plain text (for mathtext conversion)
+_SUP_MAP = {
+    "⁻": "-", "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4",
+    "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9",
+}
+_SUP_CHARS = "".join(_SUP_MAP.keys())
+
+
+def _short_index_name(name):
+    """Map a long internal index id to a compact label for summary figures."""
+    if name in INDEX_SHORT_NAMES:
+        return INDEX_SHORT_NAMES[name]
+    return (name.replace("_exceedance_days", "")
+                .replace("_days", "")
+                .replace("_number", " N")
+                .replace("_duration", " D"))
+
+
+def _units_to_mathtext(s):
+    """
+    Convert Unicode superscripts (e.g. 'days event⁻¹') into matplotlib
+    mathtext ('days event$^{-1}$') so the minus sign renders correctly.
+    """
+    import re
+
+    def _repl(m):
+        body = "".join(_SUP_MAP.get(c, c) for c in m.group(0))
+        return r"$^{%s}$" % body
+
+    return re.sub(f"[{_SUP_CHARS}]+", _repl, s)
+
+
+def taylor_diagram(obs_dict, mod_dict, outfile,
+                   title="Model Skill — ICON-CLM vs E-OBS (Germany average)"):
+    """
+    Taylor diagram (Taylor 2001) in Cartesian coordinates.
+
+    Mapping: x = σ_norm · r,  y = σ_norm · √(1 − r²)
+    so the x-axis and y-axis are both labelled "Standard Deviation (normalised)".
+    The reference point (E-OBS) sits at (1, 0); a perfect model coincides with it.
+    Standard deviation arcs (dashed circles from origin) and RMSE arcs (dotted
+    circles centred at the reference point) are drawn in the first quadrant.
+    """
+    names, corrs, norm_stds = [], [], []
+    for name, obs_vals in obs_dict.items():
+        mod_vals = mod_dict.get(name)
+        if mod_vals is None:
+            continue
+        n = min(len(obs_vals), len(mod_vals))
+        o, m = obs_vals[:n].astype(float), mod_vals[:n].astype(float)
+        valid = np.isfinite(o) & np.isfinite(m)
+        if valid.sum() < 5:
+            continue
+        o, m = o[valid], m[valid]
+        corr    = float(np.corrcoef(o, m)[0, 1])
+        std_obs = float(np.std(o, ddof=1))
+        if std_obs < 1e-9:
+            continue
+        nstd = float(np.std(m, ddof=1)) / std_obs
+        names.append(name)
+        corrs.append(np.clip(corr, -1.0, 1.0))
+        norm_stds.append(nstd)
+
+    if not names:
+        warnings.warn("taylor_diagram: no valid index pairs found; skipping.")
+        return
+
+    from matplotlib.lines import Line2D
+
+    max_std = min(max(max(norm_stds) * 1.15, 1.3), 2.5)
+    theta_q = np.linspace(0, np.pi / 2, 300)   # quarter-circle sweep
+
+    fig, ax = plt.subplots(figsize=(7.5, 6.5))
+    fig.patch.set_facecolor("white")
+    ax.set_aspect("equal")
+    if title:
+        fig.suptitle(title, fontsize=9, fontweight="normal", y=1.00)
+
+    # ── Standard deviation arcs (dashed, from origin) ─────────────────────────
+    std_ticks = np.arange(0.5, max_std + 0.01, 0.5)
+    for r_std in std_ticks:
+        x_a = r_std * np.cos(theta_q)
+        y_a = r_std * np.sin(theta_q)
+        ax.plot(x_a, y_a, "--", color="0.72", lw=0.6, zorder=1)
+        ax.text(r_std, -0.07, f"{r_std:.1f}",
+                ha="center", va="top", fontsize=8.5, color="0.45")
+
+    # ── RMSE arcs (dotted, centred at reference point (1, 0)) ─────────────────
+    rms_levels = [0.25, 0.5, 0.75, 1.0, 1.5]
+    for rms_v in rms_levels:
+        theta_r = np.linspace(0, 2 * np.pi, 600)
+        xr = 1.0 + rms_v * np.cos(theta_r)
+        yr = rms_v * np.sin(theta_r)
+        r_tot = np.sqrt(xr ** 2 + yr ** 2)
+        mask = (yr >= -0.01) & (xr >= -0.01) & (r_tot <= max_std * 1.02)
+        if mask.sum() < 3:
+            continue
+        ax.plot(xr[mask], yr[mask], ":", color="#d73027", lw=0.8, alpha=0.55,
+                zorder=1)
+        # Label near baseline (y≈0, rightmost point)
+        right_idx = np.where(mask & (yr >= 0) & (yr < 0.12))[0]
+        if len(right_idx):
+            xi, yi = xr[right_idx[-1]], yr[right_idx[-1]]
+            ax.text(xi + 0.03, yi + 0.01, f"{rms_v:.2g}",
+                    fontsize=7.5, color="#d73027", alpha=0.80, ha="left")
+
+    ax.text(max_std * 0.92, max_std * 0.88, "RMSE\n(norm.)",
+            fontsize=8.5, color="#d73027", ha="right", alpha=0.75,
+            bbox=dict(boxstyle="round,pad=0.18", fc="white", ec="none", alpha=0.7))
+
+    # ── Correlation radial lines ───────────────────────────────────────────────
+    for r_corr in [0.0, 0.4, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]:
+        ang = np.arccos(r_corr)
+        ax.plot([0, max_std * np.cos(ang)], [0, max_std * np.sin(ang)],
+                ":", color="0.65", lw=0.5, zorder=1)
+        lx = (max_std + 0.12) * np.cos(ang)
+        ly = (max_std + 0.12) * np.sin(ang)
+        ax.text(lx, ly, f"{r_corr:.2f}", ha="center", va="center",
+                fontsize=8, color="0.40",
+                rotation=-np.degrees(ang) + 90)
+
+    ax.text((max_std + 0.30) * np.cos(np.pi / 4),
+            (max_std + 0.30) * np.sin(np.pi / 4),
+            "Correlation", fontsize=8, color="0.35", ha="center", va="center",
+            rotation=45)
+
+    # ── Reference (E-OBS) marker at (1, 0) ────────────────────────────────────
+    ax.plot([1.0], [0.0], "*", color="0.20", ms=14, zorder=8,
+            markeredgecolor="k", markeredgewidth=0.5)
+    ax.text(1.04, 0.05, "E-OBS\n(ref.)", fontsize=9, color="0.25",
+            va="bottom")
+
+    # ── Model index markers (numbered) + side legend ─────────────────────────
+    # Each index is drawn as a numbered disc; a legend resolves number → name,
+    # correlation and normalised σ.  This avoids label overlap when several
+    # indices fall close together (the failure mode of on-marker text labels).
+    palette = plt.cm.tab10(np.linspace(0, 1, 10))
+    legend_handles = []
+    for i, (name, corr, nstd) in enumerate(zip(names, corrs, norm_stds)):
+        ang = np.arccos(corr)
+        x = nstd * np.cos(ang)
+        y = nstd * np.sin(ang)
+        col = palette[i % 10]
+        ax.plot(x, y, "o", color=col, ms=12, zorder=7,
+                markeredgecolor="k", markeredgewidth=0.6)
+        ax.text(x, y, str(i + 1), fontsize=8.5, ha="center", va="center",
+                color="white", fontweight="bold", zorder=8)
+        short = _short_index_name(name)
+        legend_handles.append(
+            Line2D([0], [0], marker="o", linestyle="none", color=col,
+                   markeredgecolor="k", markeredgewidth=0.5, markersize=8,
+                   label=f"{i + 1}.  {short}   (r={corr:.2f}, σ*={nstd:.2f})"))
+
+    ax.legend(handles=legend_handles, loc="upper left",
+              bbox_to_anchor=(1.01, 1.0), fontsize=9, frameon=True,
+              framealpha=0.95, edgecolor="0.7", handletextpad=0.4,
+              borderpad=0.6, labelspacing=0.6, title="Index (σ* = norm. SD)",
+              title_fontsize=8)
+
+    # ── Axes formatting ────────────────────────────────────────────────────────
+    ax.set_xlim(-0.08, max_std * 1.20)
+    ax.set_ylim(-0.18, max_std * 1.22)
+    ax.set_xlabel("Standard Deviation (normalised)", fontsize=10.5, labelpad=10)
+    ax.set_ylabel("Standard Deviation (normalised)", fontsize=10.5)
+    ax.axhline(0, color="0.45", lw=0.7, zorder=0)
+    ax.axvline(0, color="0.45", lw=0.7, zorder=0)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.tick_params(labelsize=9.5)
+    ax.grid(False)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  NEW: Trend summary heatmap
+# ══════════════════════════════════════════════════════════════════════════════
+
+def plot_trend_heatmap(heatmap_rows, outfile,
+                       title="Theil-Sen Trends per Decade — All Indices"):
+    """
+    Compact heatmap summarising all index trends for E-OBS and ICON-CLM.
+
+    Each row is one extreme index; columns are E-OBS and ICON-CLM.  Cell
+    colour reflects the sign and magnitude of the trend relative to the
+    maximum absolute trend across both datasets (row-normalised).
+    Significance is annotated (* p<0.05, ** p<0.01).
+
+    Parameters
+    ----------
+    heatmap_rows : list of dict, each with keys:
+        name       : str — display name
+        obs_slope  : float — E-OBS Theil-Sen slope per decade
+        mod_slope  : float — ICON-CLM Theil-Sen slope per decade
+        obs_pval   : float — E-OBS MK p-value
+        mod_pval   : float — ICON-CLM MK p-value
+        trend_unit : str — unit string
+    outfile : str
+    """
+    n      = len(heatmap_rows)
+    obs_sl = np.array([d["obs_slope"]  for d in heatmap_rows], dtype=float)
+    mod_sl = np.array([d["mod_slope"]  for d in heatmap_rows], dtype=float)
+    obs_pv = np.array([d["obs_pval"]   for d in heatmap_rows], dtype=float)
+    mod_pv = np.array([d["mod_pval"]   for d in heatmap_rows], dtype=float)
+
+    # Row-normalise so every index spans [−1, +1] in colour space
+    maxabs = np.maximum(np.abs(obs_sl), np.abs(mod_sl))
+    maxabs[maxabs < 1e-9] = 1.0
+    heat = np.column_stack([obs_sl / maxabs, mod_sl / maxabs])  # (n, 2)
+
+    # Row labels: "Index name  [trend unit]".  Strip any unit bracket already
+    # present in the display name to avoid a duplicate (e.g. the long_name
+    # carries "[days summer⁻¹]" while trend_unit is "days decade⁻¹"), and
+    # convert Unicode superscripts to mathtext so the minus sign renders.
+    import re
+    row_labels = []
+    for d in heatmap_rows:
+        base = re.sub(r"\s*\[[^\]]*\]\s*$", "", d["name"]).strip()
+        label = f"{base}  [{d['trend_unit']}]"
+        row_labels.append(label)
+
+    fig_h  = max(5.0, 0.80 * n + 2.0)
+    fig, ax = plt.subplots(figsize=(9.0, fig_h))
+    fig.patch.set_facecolor("white")
+
+    im = ax.imshow(heat, cmap="RdBu_r", vmin=-1.0, vmax=1.0, aspect="auto")
+
+    # Cell annotation: value + significance only (no units — those are in row labels)
+    for i in range(n):
+        for j, (sl, pv) in enumerate(
+                [(obs_sl[i], obs_pv[i]), (mod_sl[i], mod_pv[i])]):
+            sig      = "**" if pv < 0.01 else ("*" if pv < 0.05 else "")
+            txt_col  = "white" if abs(heat[i, j]) > 0.60 else "black"
+            ax.text(j, i, f"{sl:+.2f}{sig}",
+                    ha="center", va="center", fontsize=11,
+                    color=txt_col,
+                    fontweight="bold" if sig else "normal")
+
+    ax.set_xticks([0, 1])
+    ax.set_xticklabels(["E-OBS", "ICON-CLM"], fontsize=11, fontweight="bold")
+    ax.xaxis.set_ticks_position("top")
+    ax.xaxis.set_label_position("top")
+    ax.set_yticks(range(n))
+    ax.set_yticklabels(row_labels, fontsize=9)
+    # Draw grid lines between cells
+    for i in range(n + 1):
+        ax.axhline(i - 0.5, color="white", lw=1.5, zorder=3)
+    for j in range(3):
+        ax.axvline(j - 0.5, color="white", lw=1.5, zorder=3)
+    ax.set_title(
+        "(* p<0.05, ** p<0.01 — Mann-Kendall, Yue-Wang correction)",
+        fontsize=9, fontweight="normal", pad=28)
+    ax.tick_params(axis="both", which="both", length=0)
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+
+    cb = fig.colorbar(im, ax=ax, orientation="vertical",
+                      fraction=0.035, pad=0.03, shrink=0.80)
+    cb.set_label("Row-normalised trend", fontsize=8)
+    cb.ax.tick_params(labelsize=9)
+
+    plt.tight_layout()
+    fig.savefig(outfile, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)

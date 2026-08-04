@@ -1,0 +1,20 @@
+# Core scientific stack
+numpy>=1.24,<2.0
+pandas>=2.0,<3.0
+xarray>=2023.1,<2025.0
+scipy>=1.10,<2.0
+netCDF4>=1.6,<2.0
+
+# Statistics
+pymannkendall>=1.4,<2.0
+
+# Visualisation
+matplotlib>=3.7,<4.0
+
+# Geospatial
+geopandas>=0.13,<2.0
+shapely>=2.0,<3.0
+pyproj>=3.5,<4.0
+
+# Optional but recommended for faster I/O
+h5netcdf>=1.0
