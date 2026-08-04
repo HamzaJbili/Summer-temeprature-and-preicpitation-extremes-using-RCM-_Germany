@@ -144,10 +144,6 @@ COMPOSITE_REP = {
     "Precipitation": ("CDD",                  "CDD",       "CDD"),   # CDD-only test; original: ("SPI", "SPI", "SPI")
 }
 
-# Early / late split for the temporal composite comparison (ICON-only).
-# Early period: START_YEAR..EARLY_END ; late period: EARLY_END+1..END_YEAR.
-EARLY_END = 1985
-
 # ── driver file config ─────────────────────────────────────────────────────────
 _SUFFIX = "DE-0.25_JJA_1950-2022.nc"
 DRIVER_FILES = {
@@ -379,35 +375,6 @@ def composite_pvalue(driver_anom, high_years, all_years):
                         dims=("lat", "lon"), name="pval")
 
 
-def composite_mean_anomaly(driver_anom, high_years):
-    """
-    Mean driver anomaly (vs 1961-1990) over the extreme summers only.
-
-    Unlike composite_anomaly (extreme minus rest), this keeps the 1961-1990
-    baseline, so the field is an *absolute* anomaly level.  That makes the
-    early- and late-period figures directly comparable — a period-wide drift
-    (e.g. from changing aerosol / GHG forcing) shows up here, whereas it
-    cancels out in the extreme-minus-rest composite.
-    """
-    return driver_anom.sel(year=high_years).mean("year", skipna=True)
-
-
-def composite_mean_pvalue(driver_anom, high_years):
-    """
-    Per-grid-cell one-sample t-test: is the extreme-summer mean anomaly
-    different from the 1961-1990 climatology (i.e. from zero)?
-    """
-    from scipy.stats import ttest_1samp
-    da = driver_anom.transpose("year", "lat", "lon")
-    hi = da.sel(year=high_years).values          # (n_high, lat, lon)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        res = ttest_1samp(hi, popmean=0.0, axis=0, nan_policy="omit")
-    pval = np.asarray(np.ma.filled(res.pvalue, np.nan), dtype=np.float32)
-    return xr.DataArray(pval,
-                        coords={"lat": da["lat"], "lon": da["lon"]},
-                        dims=("lat", "lon"), name="pval")
-
-
 def _interp_colors(palette, n):
     from matplotlib.colors import to_rgba
     rgba = np.array([to_rgba(c) for c in palette])
@@ -510,35 +477,21 @@ def plot_composite_figure(composites, pvals, gdf, geom, outfile):
     print(f"  Saved: {outfile}")
 
 
-def run_composite_group(group_name, drivers, gdf, geom,
-                        yr_lo=None, yr_hi=None, suffix="", mode="contrast"):
+def run_composite_group(group_name, drivers, gdf, geom):
     """
     One grouped composite figure per group, using the representative index.
-
-    *yr_lo*/*yr_hi* restrict the analysis to a sub-period (extremes selected
-    within it); *suffix* is appended to the output filename.
-
-    mode="contrast"  -> field = mean(extreme) - mean(rest) anomaly; a baseline-
-                        free "what drives extreme summers" composite, with a
-                        two-sample (extreme vs rest) t-test.  Used full-period.
-    mode="absolute"  -> field = mean extreme-summer anomaly vs 1961-1990; keeps
-                        the common baseline so early/late are comparable, with a
-                        one-sample t-test (vs the 1961-1990 normal).  Used for
-                        the early/late drift comparison.
+    Each panel carries Welch-t significance stippling (extreme vs. rest).
     """
     display_name, nc_stem, label = COMPOSITE_REP[group_name]
     try:
         index_field = load_index_field(nc_stem, "ICON")
     except FileNotFoundError as e:
-        print(f"  [{group_name}{suffix}] composite skipped — {e}")
+        print(f"  [{group_name}] composite skipped — {e}")
         return
 
-    if yr_lo is not None:
-        index_field = index_field.sel(year=slice(yr_lo, yr_hi))
-
     high_years = top_tercile_years(index_field)
-    print(f"  [{group_name}{suffix}] {label}: top-tercile years "
-          f"({len(high_years)}): {sorted(high_years)}")
+    print(f"  [{group_name}] {label}: top-tercile years ({len(high_years)}): "
+          f"{sorted(high_years)}")
 
     composites, pvals = {}, {}
     for dname in drivers:
@@ -547,27 +500,21 @@ def run_composite_group(group_name, drivers, gdf, geom,
         except Exception as e:
             print(f"    {dname}: could not load — {e}")
             continue
-        if yr_lo is not None:
-            anom = anom.sel(year=slice(yr_lo, yr_hi))
         anom_years = anom["year"].values.astype(int)
         common     = np.intersect1d(high_years, anom_years).astype(int)
         if len(common) < 3:
             print(f"    {dname}: <3 overlapping years — skipping.")
             continue
-        if mode == "absolute":
-            composites[dname] = composite_mean_anomaly(anom, common)
-            pvals[dname]      = composite_mean_pvalue(anom, common)
-        else:
-            composites[dname] = composite_anomaly(anom, common, anom_years)
-            pvals[dname]      = composite_pvalue(anom, common, anom_years)
+        composites[dname] = composite_anomaly(anom, common, anom_years)
+        pvals[dname]      = composite_pvalue(anom, common, anom_years)
 
     if len(composites) < 2:
-        print(f"  [{group_name}{suffix}] not enough drivers — skipping figure.")
+        print(f"  [{group_name}] not enough drivers — skipping composite figure.")
         return
 
     plot_composite_figure(
         composites, pvals, gdf, geom,
-        outfile=os.path.join(FIGDIR, f"composite_{group_name.lower()}{suffix}.png"))
+        outfile=os.path.join(FIGDIR, f"composite_{group_name.lower()}.png"))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -608,22 +555,15 @@ if __name__ == "__main__":
         print(f"  Saved: {TABDIR}/driver_correlations.csv")
 
     # ── Part 2: composite anomaly maps ────────────────────────────────────────
-    #   For each group:
-    #     full period   -> extreme-minus-rest composite ("what drives extremes")
-    #     early / late  -> extreme-summer anomaly vs 1961-1990 (absolute level,
-    #                      comparable across periods -> forcing-driven drift)
+    #   Extreme-minus-rest composite per group, with Welch-t significance
+    #   stippling (extreme vs. rest summers).
     print("\n[2/2] Composite anomaly maps")
-    for grp, drv in [("Temperature", temp_drv), ("Precipitation", precip_drv)]:
-        run_composite_group(grp, drv, gdf, geom)                       # full: contrast
-        run_composite_group(grp, drv, gdf, geom, mode="absolute",
-                            yr_lo=int(START_YEAR), yr_hi=EARLY_END, suffix="_early")
-        run_composite_group(grp, drv, gdf, geom, mode="absolute",
-                            yr_lo=EARLY_END + 1, yr_hi=int(END_YEAR), suffix="_late")
+    run_composite_group("Temperature",   temp_drv,   gdf, geom)
+    run_composite_group("Precipitation", precip_drv, gdf, geom)
 
     print("\n" + "=" * 56)
     print("Done. Output:")
     print(f"  {FIGDIR}/heatmap_temperature.png  heatmap_precipitation.png")
     print(f"  {FIGDIR}/composite_temperature.png  composite_precipitation.png")
-    print(f"  {FIGDIR}/composite_*_early.png  composite_*_late.png")
     print(f"  {TABDIR}/driver_correlations.csv")
     print("=" * 56)
